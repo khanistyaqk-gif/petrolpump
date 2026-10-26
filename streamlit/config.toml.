@@ -1,0 +1,14 @@
+[theme]
+primaryColor = "#14b8a6"
+base = "light"
+
+[server]
+enableXsrfProtection = true
+enableCORS = true
+maxUploadSize = 20
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
