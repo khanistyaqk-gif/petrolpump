@@ -565,3 +565,11 @@ begin
         execute format('alter table public.%I enable row level security', t);
     end loop;
 end $$;
+
+-- ---------- Server (service_role) ko tables ki permission ----------
+-- Naye Supabase projects mein SQL se bani tables apne aap Data API ko nahi milti.
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
