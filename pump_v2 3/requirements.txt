@@ -1,4 +1,0 @@
-streamlit>=1.37
-supabase>=2.18
-python-dotenv>=1.0
-pandas>=2.2
