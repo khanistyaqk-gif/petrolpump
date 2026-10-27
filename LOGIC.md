@@ -165,6 +165,17 @@ Status:
   Laagat = bika litre × us fuel ka **aakhri tanker rate** (bill ÷ litre). Poora tanker bill ek din mein nahi.
 - 📝 Aakhri tanker rate ki jagah average rate chahiye to bataiye.
 
+## 12b. Print reports
+
+- ✅ **Salesman settlement report** (A4): nozzle-wise opening / closing / testing / sale litre / rate / amount,
+  payment (cash, paytm, ccms, credit), credit party list (fuel udhaar + cash diya), farak (short/excess),
+  manager ko jama cash, sign ki jagah (Salesman, Manager, Owner).
+  Approve hote hi Settlement page par print button; purane report Reports → 🖨️ Print.
+- ✅ **Din ka salesman-wise summary** (A4 landscape): har salesman ki fuel-wise litre, sale, cash, paytm, ccms,
+  credit, creditor ko cash, cash jama, short/excess + kul. Sirf approved duty judti hai; pending ka naam alag likha aata hai.
+- ✅ Report duty ki tarikh se banti hai, aur saved snapshot se (baad ke rate badlav se nahi badalti).
+- ✅ Pump ka naam/pata secrets mein `PUMP_NAME`, `PUMP_ADDRESS`.
+
 ## 13. Owner extras
 
 - ✅ Hisaab check: tank stock = register, party balance = khata, cash minus nahi.
