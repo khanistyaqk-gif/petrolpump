@@ -36,26 +36,45 @@ def duty_page():
 
     # ---- Sale entry ----
     st.subheader("Sale entry")
-    if editable:
-        with st.form("sale", clear_on_submit=True):
-            ids = [a["nozzle_id"] for a in nozzles]
-            nid = st.selectbox("Nozzle", ids, format_func=lambda i: next(
-                (a.get("nozzles") or {}).get("nozzle_name") for a in nozzles if a["nozzle_id"] == i))
-            liters = num("Litre", "sale_l", value=0.0)
-            ok = st.form_submit_button("Entry jodein", type="primary", use_container_width=True)
-        if ok:
-            run(sales.add_entry, me["id"], nid, liters, success="Entry jud gayi.")
-
+    st.caption("Har nozzle ki ek entry. Entry ke baad nozzle lock — badalna ho to ✏️ Edit ya ❌ Cancel.")
     entries = sales.live_entries(duty["id"], me["id"])
+    done_ids = {e["nozzle_id"] for e in entries}
+    open_nozzles = [a for a in nozzles if a["nozzle_id"] not in done_ids]
+    if editable:
+        if open_nozzles:
+            with st.form("sale", clear_on_submit=True):
+                ids = [a["nozzle_id"] for a in open_nozzles]
+                nid = st.selectbox("Nozzle", ids, format_func=lambda i: next(
+                    (a.get("nozzles") or {}).get("nozzle_name") for a in open_nozzles if a["nozzle_id"] == i))
+                liters = num("Litre", "sale_l", value=0.0)
+                ok = st.form_submit_button("Entry jodein", type="primary", use_container_width=True)
+            if ok:
+                run(sales.add_entry, me["id"], nid, liters, success="Entry jud gayi. Nozzle lock.")
+        else:
+            st.success("Saare nozzle ki entry ho gayi.")
+
     total = sales.entries_total(duty["id"], me["id"])
     st.metric("Meri entries ka total", rs(total))
-    for e in entries[:30]:
-        c1, c2 = st.columns([4, 1])
-        c1.write(f"{(e.get('nozzles') or {}).get('nozzle_name')} · {lt(e.get('liters'))} × {rs(e.get('rate'))} = "
-                 f"**{rs(e.get('amount'))}**")
-        if editable and (e.get("status") or "pending") == "pending":
-            if c2.button("Kaatein", key=f"x_{e['id']}"):
-                run(sales.cancel_entry, e["id"], me["id"], success="Entry kat gayi.")
+    for e in entries:
+        name = (e.get("nozzles") or {}).get("nozzle_name")
+        can_change = editable and (e.get("status") or "pending") == "pending"
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([4, 1, 1])
+            c1.write(f"🔒 **{name}** · {lt(e.get('liters'))} × {rs(e.get('rate'))} = **{rs(e.get('amount'))}**")
+            if can_change:
+                if c2.button("✏️ Edit", key=f"ed_{e['id']}", use_container_width=True):
+                    st.session_state["_editing"] = e["id"]
+                if c3.button("❌ Cancel", key=f"x_{e['id']}", use_container_width=True):
+                    run(sales.cancel_entry, e["id"], me["id"], success=f"{name} ki entry cancel. Nozzle khul gaya.")
+            if can_change and st.session_state.get("_editing") == e["id"]:
+                new_l = num("Naye litre", f"edl_{e['id']}", value=float(e.get("liters") or 0))
+                s1, s2 = st.columns(2)
+                if s1.button("Save", key=f"eds_{e['id']}", type="primary", use_container_width=True):
+                    st.session_state.pop("_editing", None)
+                    run(sales.edit_entry, e["id"], me["id"], new_l, success=f"{name} ki entry badal gayi.")
+                if s2.button("Rehne do", key=f"edc_{e['id']}", use_container_width=True):
+                    st.session_state.pop("_editing", None)
+                    st.rerun()
 
     # ---- Hisaab ----
     st.subheader("Duty ka hisaab")
@@ -76,8 +95,14 @@ def duty_page():
 
     parties = credit.list_parties(active_only=True)
     items = []
-    if parties:
-        count = st.number_input("Kitni credit party?", min_value=0, max_value=20, value=0, step=1, key="b_cnt")
+    st.markdown("**Credit (udhaar)**")
+    if not parties:
+        st.info("Koi credit party nahi bani hai. Manager se **Credit Party** page par party banwayein.")
+    else:
+        count = st.number_input("Kitni party ko udhaar diya? (har party ke liye ek box khulega)",
+                                min_value=0, max_value=20, value=0, step=1, key="b_cnt")
+        if count == 0:
+            st.caption("Udhaar diya ho to upar + dabayein.")
         by_id = {p["id"]: p for p in parties}
         for i in range(int(count)):
             with st.container(border=True):
