@@ -152,6 +152,13 @@ def settlement_page():
     me = auth.require(*MGR)
     st.header("🧾 Settlement")
     flash()
+    last = st.session_state.get("_last_approved")
+    if last:
+        from views.reports import settlement_download
+        with st.container(border=True):
+            st.write(f"✅ **{last.get('name')}** ka hisaab approve hua. Print karein:")
+            settlement_download(last["id"], key=f"last_{last['id']}")
+        st.caption("Purane / din ke saare report: Reports → 🖨️ Print")
     active = duties.active_duties()
     if not active:
         st.info("Koi chalu duty nahi.")
@@ -256,7 +263,10 @@ def settlement_page():
     c1, c2, c3 = st.columns(3)
     can_approve = diff is not None and is_matched(diff) and (s.get("breakup_submitted_at") or D(s.get("meter_total")) == 0)
     if c1.button("✅ Approve", type="primary", disabled=not can_approve, use_container_width=True):
-        run(settlements.approve, s["id"], me["id"], success="Approve ho gaya. Stock minus, credit update, duty band.")
+        def _approve():
+            settlements.approve(s["id"], me["id"])
+            st.session_state["_last_approved"] = {"id": s["id"], "name": (shift.get("profiles") or {}).get("name")}
+        run(_approve, success="Approve ho gaya. Stock minus, credit update, duty band.")
     if c2.button("⏸️ Hold", use_container_width=True):
         run(settlements.hold, s["id"], note, me["id"], success="Hold kar diya.")
     if c3.button("🔄 Salesman ko wapas", use_container_width=True):
