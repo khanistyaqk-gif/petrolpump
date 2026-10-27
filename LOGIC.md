@@ -203,6 +203,14 @@ Status:
   Galla → **Cash in hand**, Kharcha → **Expenses**, Tanker inward → **Fuel purchase**, Barabar → **Matched**.
 - Kharcha categories: Salary, Electricity, Maintenance, Transport, Office, Bank charges, Rent, Miscellaneous.
 
+## 13c. Design
+
+- ✅ Poori app ek theme mein (teal rang): rangeen header, card jaise numbers, bade (48px) button, 16px input
+  (phone par zoom nahi hota), phone par kam khali jagah.
+- ✅ **Salesman screen mobile ke liye:** upar progress (Sales → Payments → Submitted); har nozzle ka apna card
+  jisme seedha litre daalo; entry ke baad bada amount + Edit / Cancel; credit sale "➕ Add" / "🗑 Remove";
+  "Check & submit" box hara (Matched) ya laal (Short/Excess) dikhata hai; "My Entries" tarikh-wise cards.
+
 ## 14. Code ki sakhti (v2 mein hamesha)
 
 - ✅ Login ki chaabi (token) URL mein nahi rehti — screenshot / link share karne se login bahar nahi jata.

@@ -4,7 +4,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from core import auth
+from core import auth, theme
 from core.calc import ZERO, D, is_matched, q2, short_excess_label
 from core.db import FUEL_TYPES, today_ist
 from core.ui import flash, fuel, lt, num, rs, run, status_label
@@ -16,8 +16,7 @@ MGR = ("owner", "manager")
 # ------------------------------------------------------------------ Dashboard
 def dashboard():
     user = auth.require(*MGR)
-    st.header("🏠 Dashboard")
-    st.caption(f"Welcome, {user['name']} · {today_ist()}")
+    theme.hero(f"Welcome, {user['name']}", f"Dashboard · {today_ist()}")
     flash()
 
     active = duties.active_duties()

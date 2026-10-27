@@ -3,8 +3,8 @@ import streamlit as st
 
 st.set_page_config(page_title="Petrol Pump", page_icon=":material/local_gas_station:", layout="wide")
 
-from core import auth, session  # noqa: E402
-from core.db import ROLE_LABELS  # noqa: E402
+from core import auth, session, theme  # noqa: E402
+from core.db import ROLE_LABELS, setting  # noqa: E402
 from views import expenses, login, manager, money, owner, reports, salesman, stock  # noqa: E402
 
 
@@ -39,6 +39,7 @@ def menu(role):
 
 
 def main():
+    theme.apply()
     try:
         user = auth.current_user()
     except RuntimeError as exc:   # secrets missing
@@ -52,6 +53,7 @@ def main():
     session.keep()
     with st.sidebar:
         st.markdown(f"**{user['name']}**  \n{ROLE_LABELS.get(user['role'])}")
+        st.caption(setting("PUMP_NAME", ""))
         if st.button("Log out", use_container_width=True):
             auth.logout()
             st.rerun()

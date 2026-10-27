@@ -1,12 +1,19 @@
 import streamlit as st
 
-from core import auth
+from core import auth, theme
+from core.db import setting
 from core.ui import run
 from repo import users
 
 
 def show():
-    st.title("⛽ Petrol Pump")
+    left, mid, right = st.columns([1, 2, 1])
+    with mid:
+        _show()
+
+
+def _show():
+    theme.hero(f"⛽ {setting('PUMP_NAME', 'Petrol Pump')}", setting("PUMP_ADDRESS", "") or "Sign in to continue")
     if not users.list_profiles(role="owner"):
         _first_owner()
         return
