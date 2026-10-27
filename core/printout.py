@@ -37,7 +37,13 @@ tr.total td { font-weight: bold; background: #f5f5f5; }
 .btn { padding: 10px 18px; font-size: 15px; background: #14b8a6; color: #fff; border: 0; border-radius: 6px;
        cursor: pointer; }
 body.wide .sheet, body.wide .bar { max-width: 277mm; }
-body.wide th, body.wide td { padding: 3px 5px; font-size: 11px; }
+body.wide th, body.wide td { padding: 2px 5px; font-size: 10.5px; }
+body.wide h2 { margin: 8px 0 3px; font-size: 12px; }
+body.wide p { margin: 3px 0; }
+body.wide .sign { margin-top: 30px; }
+body.wide .box { margin-top: 8px; padding: 6px 10px; }
+.box, .sign, tr { break-inside: avoid; }
+.end { break-inside: avoid; }
 @media print { .bar { display: none; } body { padding: 0; } }
 """
 
@@ -208,6 +214,37 @@ def day_summary_html(d: dict, pump: dict) -> str:
     else:
         credit_html = "<h2>Creditor list (aaj ka udhaar)</h2><p>Aaj koi udhaar nahi.</p>"
 
+    mode_label = {"cash": "Cash", "bank": "Bank", "paytm": "Paytm / UPI", "ccms": "CCMS"}
+    rec = d.get("received") or []
+    if rec:
+        rec_rows = "".join(f"""<tr><td>{_e(r['party'])}</td><td>{mode_label.get(r['mode'], _e(r['mode']))}
+{(' · ' + _e(r['bank'])) if r.get('bank') else ''}</td><td>{_e(r['ref'])}</td><td>{_e(r['note'])}</td>
+<td class="n">{_rs(r['amount'])}</td></tr>""" for r in rec)
+        bm = d.get("received_by_mode") or {}
+        mode_tot = " &nbsp;·&nbsp; ".join(f"{mode_label[k]}: <b>{_rs(v)}</b>" for k, v in bm.items() if v)
+        rec_total = q2(sum((r["amount"] for r in rec), ZERO))
+        received_html = f"""
+<h2>Creditor se payment mila (aaj)</h2>
+<table><tr><th>Party</th><th>Kaise</th><th>Reference / UTR</th><th>Note</th><th class="n">Amount</th></tr>{rec_rows}
+<tr class="total"><td colspan="4">Kul ({len(rec)})</td><td class="n">{_rs(rec_total)}</td></tr></table>
+<p>{mode_tot}</p>"""
+    else:
+        received_html = "<h2>Creditor se payment mila (aaj)</h2><p>Aaj kisi creditor se payment nahi aaya.</p>"
+
+    inf = d.get("inflow") or {}
+    inflow_html = f"""
+<h2>Din ki kul aawak (salesman + creditor)</h2>
+<table><tr><th>Mode</th><th class="n">Salesman se</th><th class="n">Creditor se</th><th class="n">Kul</th></tr>
+<tr><td>Cash (Manager ke paas)</td><td class="n">{_rs(t['cash_jama'])}</td>
+<td class="n">{_rs((d.get('received_by_mode') or {}).get('cash', 0))}</td><td class="n"><b>{_rs(inf.get('cash', 0))}</b></td></tr>
+<tr><td>Paytm / UPI</td><td class="n">{_rs(t['paytm'])}</td>
+<td class="n">{_rs((d.get('received_by_mode') or {}).get('paytm', 0))}</td><td class="n">{_rs(inf.get('paytm', 0))}</td></tr>
+<tr><td>CCMS</td><td class="n">{_rs(t['ccms'])}</td>
+<td class="n">{_rs((d.get('received_by_mode') or {}).get('ccms', 0))}</td><td class="n">{_rs(inf.get('ccms', 0))}</td></tr>
+<tr><td>Bank</td><td class="n">—</td>
+<td class="n">{_rs((d.get('received_by_mode') or {}).get('bank', 0))}</td><td class="n">{_rs(inf.get('bank', 0))}</td></tr>
+</table>"""
+
     body = f"""
 <div class="meta"><div><span>Tarikh:</span> <b>{_date(d['date'])}</b></div>
 <div><span>Approved duty:</span> <b>{len(d['rows'])}</b></div><div></div></div>
@@ -217,7 +254,9 @@ def day_summary_html(d: dict, pump: dict) -> str:
 <th class="n">Short / Excess</th></tr>{''.join(body_rows)}</table>
 {pend_html}
 {credit_html}
-<div class="box">Din ki kul sale: <b>{_rs(t['sale'])}</b> &nbsp;·&nbsp; Manager ke paas cash: <b>{_rs(t['cash_jama'])}</b>
+{received_html}
+{inflow_html}
+<div class="end"><div class="box">Din ki kul sale: <b>{_rs(t['sale'])}</b> &nbsp;·&nbsp; Manager ke paas kul cash: <b>{_rs(inf.get('cash', t['cash_jama']))}</b>
 &nbsp;·&nbsp; Kul farak: <b>{_diff_html(t['difference'])}</b></div>
-<div class="sign"><div>Manager</div><div></div><div>Owner</div></div>"""
+<div class="sign"><div>Manager</div><div></div><div>Owner</div></div></div>"""
     return _page("Din ka Salesman Summary", pump, body, wide=True)
