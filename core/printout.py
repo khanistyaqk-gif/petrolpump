@@ -334,3 +334,25 @@ def owner_closing_html(d: dict, pump: dict) -> str:
 {sale_html}{stock_html}{money_html}{party_html}{exp_html}
 <div class="end"><div class="sign"><div>Manager</div><div></div><div>Owner</div></div></div>"""
     return _page("Day Closing Report", pump, body, wide=True)
+
+
+# ------------------------------------------------------------------ Oil company ledger
+def oil_ledger_html(d: dict, pump: dict) -> str:
+    rows_ = "".join(f"""<tr><td>{_date(x['date'])}</td><td>{_e(x['label'])}{' (reversal)' if x['reversal'] else ''}</td>
+<td>{_e(x['note'])}</td><td>{_e(x['ref'] or '')}</td><td class="n">{_rs(x['debit']) if x['debit'] else ''}</td>
+<td class="n">{_rs(x['credit']) if x['credit'] else ''}</td><td class="n">{_rs(x['balance'])}</td></tr>""" for x in d["lines"])
+    t = d["totals"]
+    body = f"""
+<div class="meta"><div><span>Company:</span> <b>{_e(d['company'])}</b></div>
+<div><span>Period:</span> <b>{_date(d['from'])} to {_date(d['to'])}</b></div><div></div></div>
+<table><tr><th>Date</th><th>Particulars</th><th>Invoice / note</th><th>Reference</th>
+<th class="n">Invoice (+)</th><th class="n">Paid / CCMS (−)</th><th class="n">Balance due</th></tr>
+<tr><td colspan="6"><b>Opening balance</b></td><td class="n"><b>{_rs(d['opening'])}</b></td></tr>
+{rows_}
+<tr class="total"><td colspan="4">Closing balance</td><td class="n">{_rs(sum((x['debit'] for x in d['lines']), ZERO))}</td>
+<td class="n">{_rs(sum((x['credit'] for x in d['lines']), ZERO))}</td><td class="n">{_rs(d['closing'])}</td></tr></table>
+<div class="box">Invoices: <b>{_rs(t['invoice'])}</b> &nbsp;·&nbsp; CCMS adjusted: <b>{_rs(-t['ccms'])}</b>
+&nbsp;·&nbsp; Paid from bank: <b>{_rs(-t['payment'])}</b> &nbsp;·&nbsp; Balance due: <b>{_rs(d['closing'])}</b></div>
+<p style="color:#555">Match this with the oil company's account statement. Positive balance = amount payable by the pump;
+negative = advance lying with the company.</p>"""
+    return _page("Oil Company Ledger", pump, body)

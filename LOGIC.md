@@ -160,6 +160,14 @@ Status:
 - ✅ **Cash, Paytm, CCMS kabhi minus nahi** — jitna hai usse zyada nahi nikal sakte. Bank minus ho sakta hai (OD/CC).
 - ✅ Opening balance: har account ka ek hi baar (Owner > Settings).
 
+**Oil company (IOCL) khata — Money Control → 🛢️ Oil company ledger:**
+- Fuel purchase approve → invoice amount company ko **dena (+)**.
+- Salesman ka CCMS → pehle "CCMS" account mein (abhi adjust nahi hua). Jab IOCL statement mein dikhe →
+  CCMS adjustment entry → CCMS (−) aur IOCL dena (−).
+- Bank se IOCL ko payment → bank (−), IOCL dena (−).
+- Balance due = opening + invoices − CCMS − payments. Minus ho to = IOCL ke paas advance.
+- Running balance ke saath tareekh-wise khata + print; IOCL ke statement se milaan karo.
+
 ## 11. Kharcha (Expense)
 
 - ✅ Category: salary, bijli, maintenance, transport, office, bank charges, kiraya, misc.

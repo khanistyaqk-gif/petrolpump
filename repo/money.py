@@ -141,3 +141,29 @@ def reversed_groups() -> set:
 def reverse(txn_id, by):
     _rpc("reverse_money_v2", {"p_id": txn_id, "p_by": by})
     audit("money_reversed", by, {"txn": txn_id})
+
+
+def oil_ledger(oil_company_id, from_date, to_date):
+    """Oil company (IOCL etc.) ka khata. + = invoice (pump ko dena badha), − = CCMS adjust / bank payment.
+    Balance = pump ko kitna dena baaki hai."""
+    data = [t for t in txns(to_date=to_date, account="oil") if t.get("oil_company_id") == oil_company_id]
+    opening, lines = ZERO, []
+    for t in data:
+        amt = q2(t["amount"])
+        if str(t["date"]) < str(from_date):
+            opening = q2(opening + amt)
+        else:
+            lines.append(t)
+    bal, out = opening, []
+    totals = {"invoice": ZERO, "ccms": ZERO, "payment": ZERO, "other": ZERO}
+    for t in lines:
+        amt = q2(t["amount"])
+        bal = q2(bal + amt)
+        kind = t["kind"]
+        bucket = {"fuel_inward": "invoice", "ccms_adjust": "ccms", "oil_payment": "payment"}.get(kind, "other")
+        totals[bucket] = q2(totals[bucket] + amt)
+        out.append({"date": t["date"], "kind": kind, "label": KIND_LABELS.get(kind, kind),
+                    "reversal": bool(t.get("reverses_group")),
+                    "note": t.get("note") or "", "ref": t.get("ref_id") if kind != "fuel_inward" else "",
+                    "debit": amt if amt > 0 else ZERO, "credit": -amt if amt < 0 else ZERO, "balance": bal})
+    return {"opening": opening, "lines": out, "closing": bal, "totals": totals}

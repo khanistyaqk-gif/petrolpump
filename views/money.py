@@ -49,7 +49,8 @@ def page():
     if not banks or not oils:
         st.warning("Please add bank accounts and oil companies in Owner > Settings.")
 
-    tabs = st.tabs(["Cash deposit", "Paytm settlement", "CCMS adjustment", "Oil company payment", "Ledger"])
+    tabs = st.tabs(["Cash deposit", "Paytm settlement", "CCMS adjustment", "Oil company payment", "Ledger",
+                    "🛢️ Oil company ledger"])
     with tabs[0]:
         with st.form("dep", clear_on_submit=True):
             d = _date("dep_d")
@@ -128,3 +129,45 @@ def page():
                          "expenses in Expenses.", success="Transfer reversed.")
         else:
             st.info("No transactions in this period.")
+    with tabs[5]:
+        oil_ledger_tab(oils)
+
+
+def oil_ledger_tab(oils):
+    """IOCL jaisi company ka khata: invoice (+), CCMS adjust (−), bank payment (−), baaki due."""
+    from datetime import timedelta
+    from core import printout
+    from repo import reports
+    all_oils = accounts.oil_companies(False)
+    if not all_oils:
+        st.info("Add an oil company in Owner > Settings.")
+        return
+    names = {o["id"]: o["name"] for o in all_oils}
+    c1, c2, c3 = st.columns(3)
+    oid = c1.selectbox("Oil company", list(names), format_func=names.get, key="ol_o")
+    t = date.fromisoformat(today_ist())
+    f = c2.date_input("From", value=t.replace(day=1), key="ol_f").isoformat()
+    to = c3.date_input("To", value=t, key="ol_t").isoformat()
+    led = money.oil_ledger(oid, f, to)
+    tot = led["totals"]
+    m = st.columns(4)
+    m[0].metric("Opening due", rs(led["opening"]))
+    m[1].metric("Invoices (+)", rs(tot["invoice"]))
+    m[2].metric("CCMS + payments (−)", rs(-(tot["ccms"] + tot["payment"])))
+    m[3].metric("Closing due", rs(led["closing"]))
+    ccms_left = money.balance("ccms")
+    if ccms_left > 0:
+        st.info(f"CCMS collected but not yet adjusted: {rs(ccms_left)}. When it shows in the {names[oid]} account "
+                "statement, record it in the CCMS adjustment tab — the due will reduce.")
+    if led["lines"]:
+        st.dataframe(pd.DataFrame([{
+            "Date": x["date"], "Particulars": x["label"] + (" (reversal)" if x["reversal"] else ""),
+            "Invoice / note": x["note"], "Reference": x["ref"] or "",
+            "Invoice (+)": rs(x["debit"]) if x["debit"] else "", "Paid / CCMS (−)": rs(x["credit"]) if x["credit"] else "",
+            "Balance due": rs(x["balance"]),
+        } for x in led["lines"]]), hide_index=True, use_container_width=True)
+    else:
+        st.info("No entries in this period.")
+    html = printout.oil_ledger_html({"company": names[oid], "from": f, "to": to, **led}, reports.pump_info())
+    st.download_button("🖨️ Print ledger", html.encode("utf-8"), file_name=f"oil_ledger_{names[oid]}_{f}_{to}.html",
+                       mime="text/html", key=f"olp_{oid}_{f}_{to}", use_container_width=True)
