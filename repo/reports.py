@@ -199,5 +199,26 @@ def day_summary_data(on_date):
         p = by_party.setdefault(c["party"], {"party": c["party"], "fuel": ZERO, "cash": ZERO})
         p["fuel"] = q2(p["fuel"] + c["fuel"])
         p["cash"] = q2(p["cash"] + c["cash"])
+    # Creditor se aaj mila paisa (Manager ne Credit Party page par darj kiya)
+    banks = {b["id"]: b["name"] for b in rows(db().table("bank_accounts").select("id, name").execute())}
+    pay = rows(db().table("credit_transactions").select("*, credit_parties:party_id(name)")
+               .eq("type", "payment_received").eq("status", "approved").eq("date", on_date).order("id").execute())
+    received, by_mode = [], {"cash": ZERO, "bank": ZERO, "paytm": ZERO, "ccms": ZERO}
+    for p in pay:
+        mode = p.get("payment_mode") or "cash"
+        amt = q2(p["amount"])
+        received.append({"party": (p.get("credit_parties") or {}).get("name") or "—", "mode": mode,
+                         "bank": banks.get(p.get("bank_account_id")) if mode == "bank" else "",
+                         "ref": p.get("reference_id") or "", "note": p.get("note") or "", "amount": amt})
+        by_mode[mode] = q2(by_mode.get(mode, ZERO) + amt)
+
+    # Din ki kul aawak (mode-wise): salesman se + creditor se
+    inflow = {
+        "cash": q2(total["cash_jama"] + by_mode["cash"]),
+        "paytm": q2(total["paytm"] + by_mode["paytm"]),
+        "ccms": q2(total["ccms"] + by_mode["ccms"]),
+        "bank": by_mode["bank"],
+    }
     return {"date": on_date, "rows": out, "total": total, "pending": pending, "fuels": fuels,
-            "credit": credit_list, "credit_by_party": sorted(by_party.values(), key=lambda x: x["party"])}
+            "credit": credit_list, "credit_by_party": sorted(by_party.values(), key=lambda x: x["party"]),
+            "received": received, "received_by_mode": by_mode, "inflow": inflow}
