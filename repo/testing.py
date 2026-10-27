@@ -15,13 +15,13 @@ MAX_TESTING_LITERS = 100   # galti se 1000 type na ho jaye
 def create(nozzle_id, liters, remark, by):
     liters = q2(liters)
     if liters <= 0:
-        raise AppError("Testing litre daalein.")
+        raise AppError("Please enter testing litres.")
     if liters > MAX_TESTING_LITERS:
-        raise AppError(f"Testing {MAX_TESTING_LITERS} L se zyada nahi ho sakti. Number check karein.")
+        raise AppError(f"Testing cannot exceed {MAX_TESTING_LITERS} L. Please check the number.")
 
     nozzle = one(db().table("nozzles").select("*").eq("id", nozzle_id).limit(1).execute())
     if not nozzle or not nozzle.get("is_active"):
-        raise AppError("Nozzle nahi mila ya band hai.")
+        raise AppError("Nozzle not found or inactive.")
 
     before = q2(nozzle.get("current_reading"))
     after = q2(before + liters)
@@ -37,7 +37,7 @@ def create(nozzle_id, liters, remark, by):
     }).execute()
     row = one(res)
     if not row:
-        raise AppError("Testing save nahi hui.")
+        raise AppError("Testing entry could not be saved.")
 
     # Reading sirf tab badhao jab beech mein kisi ne na badli ho (do log ek saath testing na kar dein).
     cur = nozzle.get("current_reading")
@@ -46,7 +46,7 @@ def create(nozzle_id, liters, remark, by):
     upd = q.execute()
     if not rows(upd):
         db().table("daily_testing").delete().eq("id", row["id"]).execute()
-        raise AppError("Isi waqt is nozzle par kuch aur badla. Dobara try karein.")
+        raise AppError("This nozzle was just changed by someone else. Please try again.")
 
     audit("testing_added", by, {"nozzle": nozzle_id, "liters": str(liters), "assignment": a.get("id")})
     return row

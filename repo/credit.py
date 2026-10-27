@@ -29,9 +29,9 @@ def get(party_id):
 def save_party(party_id, name, phone, limit, vehicles_text, is_active, by):
     name = (name or "").strip()
     if not name:
-        raise AppError("Party ka naam daalein.")
+        raise AppError("Please enter the party name.")
     if D(limit) < 0:
-        raise AppError("Limit minus mein nahi ho sakti.")
+        raise AppError("Credit limit cannot be negative.")
     vehicles = [x.strip().upper() for x in (vehicles_text or "").replace(",", "\n").splitlines() if x.strip()]
     data = {"name": name, "phone": (phone or "").strip() or None, "credit_limit": to_json(limit),
             "vehicles": vehicles, "is_active": bool(is_active)}
@@ -53,7 +53,7 @@ def pending_increase(party_id):
 
 def add_txn(party_id, txn_type, amount, reference_id, note, vehicle, by, entry_date=None):
     if D(amount) <= 0:
-        raise AppError("Amount 0 se zyada ho.")
+        raise AppError("Amount must be greater than 0.")
     final_note = " | ".join(x for x in [(note or "").strip(), f"Vehicle: {vehicle}" if vehicle else ""] if x)
     res = db().table("credit_transactions").insert({
         "date": entry_date or today_ist(), "party_id": party_id, "type": txn_type,
@@ -83,7 +83,7 @@ def ledger(party_id, limit=200):
 
 def record_payment(party_id, amount, mode, bank_id, on_date, ref, note, by):
     if q2(amount) <= 0:
-        raise AppError("Amount 0 se zyada ho.")
+        raise AppError("Amount must be greater than 0.")
     try:
         db().rpc("record_party_payment_v2", {
             "p_party_id": party_id, "p_amount": to_json(amount), "p_mode": mode,

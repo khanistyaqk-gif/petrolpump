@@ -42,21 +42,21 @@ def entries_total(shift_id, salesman_id):
 def add_entry(salesman_id, nozzle_id, liters):
     duty = duties.active_duty_for(salesman_id)
     if not duty:
-        raise AppError("Aapki duty chalu nahi hai.")
+        raise AppError("You do not have an active shift.")
     if not _editable(duty["id"]):
-        raise AppError("Hisaab jama ho chuka hai. Badlav ke liye Manager se reopen karwayein.")
+        raise AppError("Your settlement has been submitted. Ask the Manager to return it if you need to make changes.")
 
     assignment = next((a for a in duty_nozzles(duty["id"], salesman_id) if a["nozzle_id"] == nozzle_id), None)
     if not assignment:
-        raise AppError("Ye nozzle aapki duty mein nahi hai.")
+        raise AppError("This nozzle is not assigned to your shift.")
     if any(e["nozzle_id"] == nozzle_id for e in live_entries(duty["id"], salesman_id)):
-        name = (assignment.get("nozzles") or {}).get("nozzle_name") or "Is nozzle"
-        raise AppError(f"{name} ki entry ho chuki hai. Badalna ho to us entry par Edit ya Cancel dabayein.")
+        name = (assignment.get("nozzles") or {}).get("nozzle_name") or "this nozzle"
+        raise AppError(f"An entry for {name} already exists. Use Edit or Cancel on that entry to change it.")
     fuel = (assignment.get("nozzles") or {}).get("fuel_type")
     shift_date = duty.get("date") or today_ist()
     rate_row = rates.rate_row_for(fuel, shift_date)
     if not rate_row or D(rate_row.get("price_per_liter")) <= 0:
-        raise AppError(f"{fuel} ka rate {shift_date} ke liye set nahi hai. Owner se rate daalwayein.")
+        raise AppError(f"No {fuel} rate is set for {shift_date}. Please ask the Owner to set the rate.")
     rate = q2(rate_row["price_per_liter"])
     try:
         amount = sale_amount(liters, rate)
@@ -67,7 +67,7 @@ def add_entry(salesman_id, nozzle_id, liters):
         _insert_entry(duty, nozzle_id, salesman_id, shift_date, fuel, liters, rate, rate_row, amount)
     except Exception as exc:
         if "uniq_live_sale_per_nozzle" in str(exc) or "duplicate" in str(exc).lower():
-            raise AppError("Is nozzle ki entry ho chuki hai.")
+            raise AppError("An entry for this nozzle already exists.")
         raise
     return amount
 
@@ -86,9 +86,9 @@ def _insert_entry(duty, nozzle_id, salesman_id, shift_date, fuel, liters, rate, 
 def _own_pending(entry_id, salesman_id):
     e = one(db().table("sale_entries").select("*").eq("id", entry_id).limit(1).execute())
     if not e or e.get("salesman_id") != salesman_id or not LIVE(e):
-        raise AppError("Entry nahi mili.")
+        raise AppError("Entry not found.")
     if (e.get("status") or "pending") != "pending" or not _editable(e["shift_id"]):
-        raise AppError("Hisaab jama ho chuka hai. Badlav ke liye Manager se reopen karwayein.")
+        raise AppError("Your settlement has been submitted. Ask the Manager to return it if you need to make changes.")
     return e
 
 

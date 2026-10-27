@@ -25,7 +25,7 @@ def D(value) -> Decimal:
     try:
         return Decimal(str(value).strip())
     except (InvalidOperation, ValueError):
-        raise CalcError(f"Galat number: {value!r}")
+        raise CalcError(f"Invalid number: {value!r}")
 
 
 def q2(value) -> Decimal:
@@ -41,9 +41,9 @@ def to_json(value) -> float:
 def sale_amount(liters, rate) -> Decimal:
     liters, rate = D(liters), D(rate)
     if liters <= 0:
-        raise CalcError("Litre 0 se zyada hone chahiye.")
+        raise CalcError("Litres must be greater than 0.")
     if rate <= 0:
-        raise CalcError("Rate 0 se zyada hona chahiye.")
+        raise CalcError("Rate must be greater than 0.")
     return q2(liters * rate)
 
 
@@ -57,18 +57,18 @@ def nozzle_closing(opening, closing, testing, rate, nozzle_name="Nozzle") -> dic
     opening, closing, testing, rate = D(opening), D(closing), D(testing), D(rate)
 
     if closing <= 0:
-        raise CalcError(f"{nozzle_name}: closing reading daalein.")
+        raise CalcError(f"{nozzle_name}: please enter the closing reading.")
     if closing < opening:
-        raise CalcError(f"{nozzle_name}: closing ({closing}) opening ({opening}) se kam nahi ho sakti.")
+        raise CalcError(f"{nozzle_name}: closing ({closing}) cannot be less than opening ({opening}).")
     if testing < 0:
-        raise CalcError(f"{nozzle_name}: testing minus mein nahi ho sakti.")
+        raise CalcError(f"{nozzle_name}: testing cannot be negative.")
     if rate <= 0:
-        raise CalcError(f"{nozzle_name}: is fuel ka rate set nahi hai.")
+        raise CalcError(f"{nozzle_name}: fuel rate is not set.")
 
     gross = q2(closing - opening)
     testing = q2(testing)
     if testing > gross:
-        raise CalcError(f"{nozzle_name}: testing ({testing} L) gross sale ({gross} L) se zyada hai.")
+        raise CalcError(f"{nozzle_name}: testing ({testing} L) is more than gross sale ({gross} L).")
 
     net = q2(gross - testing)
     return {
@@ -90,7 +90,7 @@ def meter_total(rows) -> Decimal:
 def payment_total(cash, paytm, ccms, credit) -> Decimal:
     parts = [D(cash), D(paytm), D(ccms), D(credit)]
     if any(p < 0 for p in parts):
-        raise CalcError("Payment amount minus mein nahi ho sakta.")
+        raise CalcError("Payment amounts cannot be negative.")
     return q2(sum(parts, ZERO))
 
 
@@ -115,14 +115,14 @@ def short_excess_label(difference) -> str:
         return f"Short ₹{d}"
     if d < 0:
         return f"Excess ₹{-d}"
-    return "Barabar"
+    return "Matched"
 
 
 def cash_transfer_expected(cash, cash_given_to_creditors) -> Decimal:
     """Manager ko jama hone wala cash = cash - creditors ko diya cash."""
     cash, given = D(cash), D(cash_given_to_creditors)
     if given > cash:
-        raise CalcError("Creditor ko diya cash, kul cash se zyada nahi ho sakta.")
+        raise CalcError("Cash advanced to credit parties cannot exceed total cash.")
     return q2(cash - given)
 
 
@@ -151,7 +151,7 @@ def vehicle_allowed(vehicle, allowed_list) -> bool:
 def stock_after_sale(current_stock, sale_liters, fuel_type="fuel") -> Decimal:
     new = q2(D(current_stock) - D(sale_liters))
     if new < 0:
-        raise CalcError(f"{fuel_type} stock kam hai: tank {q2(current_stock)} L, sale {q2(sale_liters)} L.")
+        raise CalcError(f"Insufficient {fuel_type} stock: tank {q2(current_stock)} L, sale {q2(sale_liters)} L.")
     return new
 
 

@@ -98,15 +98,15 @@ def _page(title, pump, body, wide=False) -> str:
     name = _e(pump.get("name") or "Petrol Pump")
     addr = _e(pump.get("address") or "")
     printed = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
-    return f"""<!doctype html><html lang="hi"><head><meta charset="utf-8">
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{_e(title)}</title>
 <style>{CSS}{"@page { size: A4 landscape; }" if wide else ""}</style></head><body class="{'wide' if wide else ''}">
 <div class="bar"><button class="btn" onclick="window.print()">🖨️ Print</button></div>
 <div class="sheet">
 <div class="head"><div><h1>{name}</h1><div class="sub">{addr}</div></div>
-<div><p class="title">{_e(title)}</p><div class="sub">Print: {printed}</div></div></div>
+<div><p class="title">{_e(title)}</p><div class="sub">Printed: {printed}</div></div></div>
 {body}
-<div class="foot">Petrol Pump v2 · computer se bani report</div>
+<div class="foot">Petrol Pump v2 · Computer-generated report</div>
 </div></body></html>"""
 
 
@@ -123,45 +123,45 @@ def settlement_html(d: dict, pump: dict) -> str:
 <td class="n">{_l(r.get('opening'))}</td><td class="n">{_l(r.get('closing'))}</td>
 <td class="n">{_l(r.get('testing_liters'))}</td><td class="n">{_l(r.get('net_sale_liters'))}</td>
 <td class="n">{_rs(r.get('rate'))}</td><td class="n">{_rs(r.get('sale_amount'))}</td></tr>""")
-    rows.append(f"""<tr class="total"><td colspan="4">Kul</td><td class="n">{_l(t_t)}</td><td class="n">{_l(t_l)}</td>
+    rows.append(f"""<tr class="total"><td colspan="4">Total</td><td class="n">{_l(t_t)}</td><td class="n">{_l(t_l)}</td>
 <td></td><td class="n">{_rs(t_a)}</td></tr>""")
 
     credit_rows = d.get("credit") or []
     if credit_rows:
-        cr = "".join(f"""<tr><td>{_e(c['party'])}</td><td>{'Fuel udhaar' if c['type'] == 'sale' else 'Cash diya'}</td>
+        cr = "".join(f"""<tr><td>{_e(c['party'])}</td><td>{'Fuel on credit' if c['type'] == 'sale' else 'Cash advance'}</td>
 <td>{_e(c.get('note'))}</td><td class="n">{_rs(c['amount'])}</td></tr>""" for c in credit_rows)
-        credit_html = f"""<h2>Credit (udhaar)</h2><table><tr><th>Party</th><th>Kya</th><th>Gaadi / note</th>
+        credit_html = f"""<h2>Credit sales</h2><table><tr><th>Party</th><th>Type</th><th>Vehicle / note</th>
 <th class="n">Amount</th></tr>{cr}</table>"""
     else:
         credit_html = ""
 
     pay = [("Cash", s.get("cash_amount")), ("Paytm / UPI", s.get("paytm_amount")),
-           ("CCMS / Card", s.get("ccms_amount")), ("Credit (fuel udhaar)", s.get("credit_amount"))]
+           ("CCMS / Card", s.get("ccms_amount")), ("Credit (fuel on credit)", s.get("credit_amount"))]
     pay_total = q2(sum((D(v) for _, v in pay), ZERO))
     pay_rows = "".join(f'<tr><td>{k}</td><td class="n">{_rs(v)}</td></tr>' for k, v in pay)
-    status = "✅ Approved" if s.get("status") == "approved" else f"⚠️ {_e(s.get('status'))} (abhi approve nahi)"
+    status = "✅ Approved" if s.get("status") == "approved" else f"⚠️ {_e(s.get('status'))} (not yet approved)"
 
     body = f"""
 <div class="meta">
 <div><span>Salesman:</span> <b>{_e(d['salesman'])}</b></div>
-<div><span>Duty tarikh:</span> <b>{_date(s.get('date'))}</b></div>
-<div><span>Hisaab no.:</span> <b>#{_e(s.get('id'))}</b></div>
-<div><span>Duty shuru:</span> {_time(d.get('started_at'))}</div>
-<div><span>Approve:</span> {_time(s.get('approved_at'))}</div>
+<div><span>Shift date:</span> <b>{_date(s.get('date'))}</b></div>
+<div><span>Settlement no.:</span> <b>#{_e(s.get('id'))}</b></div>
+<div><span>Shift started:</span> {_time(d.get('started_at'))}</div>
+<div><span>Approved at:</span> {_time(s.get('approved_at'))}</div>
 <div><span>Status:</span> {status}</div>
 </div>
-<h2>Nozzle reading</h2>
+<h2>Nozzle readings</h2>
 <table><tr><th>Nozzle</th><th>Fuel</th><th class="n">Opening</th><th class="n">Closing</th><th class="n">Testing (L)</th>
 <th class="n">Sale (L)</th><th class="n">Rate</th><th class="n">Amount</th></tr>{''.join(rows)}</table>
 <h2>Payment</h2>
 <table><tr><th>Mode</th><th class="n">Amount</th></tr>{pay_rows}
-<tr class="total"><td>Kul payment</td><td class="n">{_rs(pay_total)}</td></tr></table>
+<tr class="total"><td>Total payment</td><td class="n">{_rs(pay_total)}</td></tr></table>
 {credit_html}
 <div class="box">
-Meter se sale: <b>{_rs(s.get('meter_total'))}</b> &nbsp;·&nbsp; Payment: <b>{_rs(pay_total)}</b>
-&nbsp;·&nbsp; Farak: <b>{_diff_html(s.get('difference'))}</b><br>
-Creditor ko diya cash: {_rs(s.get('cash_given_to_creditor_amount'))} &nbsp;·&nbsp;
-<b>Manager ko jama cash: {_rs(s.get('cash_transfer_expected'))}</b>
+Sale as per meter: <b>{_rs(s.get('meter_total'))}</b> &nbsp;·&nbsp; Payment: <b>{_rs(pay_total)}</b>
+&nbsp;·&nbsp; Difference: <b>{_diff_html(s.get('difference'))}</b><br>
+Cash advanced to credit parties: {_rs(s.get('cash_given_to_creditor_amount'))} &nbsp;·&nbsp;
+<b>Cash to be handed to Manager: {_rs(s.get('cash_transfer_expected'))}</b>
 </div>
 <div class="sign"><div>Salesman<br>{_e(d['salesman'])}</div><div>Manager<br>{_e(d.get('approver') or '')}</div>
 <div>Owner</div></div>"""
@@ -181,7 +181,7 @@ def day_summary_html(d: dict, pump: dict) -> str:
 <td class="n">{_diff_html(r['difference'])}</td></tr>""")
     t = d["total"]
     fuel_tot = "".join(f'<td class="n">{_l(t["liters"].get(f, 0))}</td>' for f in fuels)
-    body_rows.append(f"""<tr class="total"><td>Kul ({len(d['rows'])})</td>{fuel_tot}<td class="n">{_rs(t['sale'])}</td>
+    body_rows.append(f"""<tr class="total"><td>Total ({len(d['rows'])})</td>{fuel_tot}<td class="n">{_rs(t['sale'])}</td>
 <td class="n">{_rs(t['cash'])}</td><td class="n">{_rs(t['paytm'])}</td><td class="n">{_rs(t['ccms'])}</td>
 <td class="n">{_rs(t['credit'])}</td><td class="n">{_rs(t['cash_given'])}</td><td class="n">{_rs(t['cash_jama'])}</td>
 <td class="n">{_diff_html(t['difference'])}</td></tr>""")
@@ -189,7 +189,7 @@ def day_summary_html(d: dict, pump: dict) -> str:
     pending = d.get("pending") or []
     pend_html = ""
     if pending:
-        pend_html = '<div class="warn">⚠️ Abhi approve nahi hue (is summary mein nahi jode): ' + ", ".join(
+        pend_html = '<div class="warn">⚠️ Pending approval (not included in this summary): ' + ", ".join(
             f"{_e(p['salesman'])} ({_e(p['status'])})" for p in pending) + "</div>"
 
     credit_html = ""
@@ -204,15 +204,15 @@ def day_summary_html(d: dict, pump: dict) -> str:
         party_rows = "".join(f"""<tr><td>{_e(p['party'])}</td><td class="n">{_rs(p['fuel'])}</td>
 <td class="n">{_rs(p['cash'])}</td><td class="n">{_rs(p['fuel'] + p['cash'])}</td></tr>""" for p in parties)
         credit_html = f"""
-<h2>Creditor list (aaj ka udhaar)</h2>
-<table><tr><th>Party</th><th>Salesman</th><th>Gaadi / slip</th><th class="n">Fuel udhaar</th>
-<th class="n">Cash diya</th><th class="n">Kul</th></tr>{lines}
-<tr class="total"><td colspan="3">Kul ({len(cl)})</td><td class="n">{_rs(f_t)}</td><td class="n">{_rs(c_t)}</td>
+<h2>Credit sales (today)</h2>
+<table><tr><th>Party</th><th>Salesman</th><th>Vehicle / slip</th><th class="n">Fuel on credit</th>
+<th class="n">Cash advance</th><th class="n">Total</th></tr>{lines}
+<tr class="total"><td colspan="3">Total ({len(cl)})</td><td class="n">{_rs(f_t)}</td><td class="n">{_rs(c_t)}</td>
 <td class="n">{_rs(f_t + c_t)}</td></tr></table>
-<h2>Party-wise jod</h2>
-<table><tr><th>Party</th><th class="n">Fuel udhaar</th><th class="n">Cash diya</th><th class="n">Kul</th></tr>{party_rows}</table>"""
+<h2>Party-wise total</h2>
+<table><tr><th>Party</th><th class="n">Fuel on credit</th><th class="n">Cash advance</th><th class="n">Total</th></tr>{party_rows}</table>"""
     else:
-        credit_html = "<h2>Creditor list (aaj ka udhaar)</h2><p>Aaj koi udhaar nahi.</p>"
+        credit_html = "<h2>Credit sales (today)</h2><p>No credit sales today.</p>"
 
     mode_label = {"cash": "Cash", "bank": "Bank", "paytm": "Paytm / UPI", "ccms": "CCMS"}
     rec = d.get("received") or []
@@ -224,18 +224,18 @@ def day_summary_html(d: dict, pump: dict) -> str:
         mode_tot = " &nbsp;·&nbsp; ".join(f"{mode_label[k]}: <b>{_rs(v)}</b>" for k, v in bm.items() if v)
         rec_total = q2(sum((r["amount"] for r in rec), ZERO))
         received_html = f"""
-<h2>Creditor se payment mila (aaj)</h2>
-<table><tr><th>Party</th><th>Kaise</th><th>Reference / UTR</th><th>Note</th><th class="n">Amount</th></tr>{rec_rows}
-<tr class="total"><td colspan="4">Kul ({len(rec)})</td><td class="n">{_rs(rec_total)}</td></tr></table>
+<h2>Payments received from credit parties (today)</h2>
+<table><tr><th>Party</th><th>Mode</th><th>Reference / UTR</th><th>Note</th><th class="n">Amount</th></tr>{rec_rows}
+<tr class="total"><td colspan="4">Total ({len(rec)})</td><td class="n">{_rs(rec_total)}</td></tr></table>
 <p>{mode_tot}</p>"""
     else:
-        received_html = "<h2>Creditor se payment mila (aaj)</h2><p>Aaj kisi creditor se payment nahi aaya.</p>"
+        received_html = "<h2>Payments received from credit parties (today)</h2><p>No payments received today.</p>"
 
     inf = d.get("inflow") or {}
     inflow_html = f"""
-<h2>Din ki kul aawak (salesman + creditor)</h2>
-<table><tr><th>Mode</th><th class="n">Salesman se</th><th class="n">Creditor se</th><th class="n">Kul</th></tr>
-<tr><td>Cash (Manager ke paas)</td><td class="n">{_rs(t['cash_jama'])}</td>
+<h2>Total collection for the day (salesmen + credit parties)</h2>
+<table><tr><th>Mode</th><th class="n">From salesmen</th><th class="n">From credit parties</th><th class="n">Total</th></tr>
+<tr><td>Cash (with Manager)</td><td class="n">{_rs(t['cash_jama'])}</td>
 <td class="n">{_rs((d.get('received_by_mode') or {}).get('cash', 0))}</td><td class="n"><b>{_rs(inf.get('cash', 0))}</b></td></tr>
 <tr><td>Paytm / UPI</td><td class="n">{_rs(t['paytm'])}</td>
 <td class="n">{_rs((d.get('received_by_mode') or {}).get('paytm', 0))}</td><td class="n">{_rs(inf.get('paytm', 0))}</td></tr>
@@ -246,17 +246,17 @@ def day_summary_html(d: dict, pump: dict) -> str:
 </table>"""
 
     body = f"""
-<div class="meta"><div><span>Tarikh:</span> <b>{_date(d['date'])}</b></div>
-<div><span>Approved duty:</span> <b>{len(d['rows'])}</b></div><div></div></div>
+<div class="meta"><div><span>Date:</span> <b>{_date(d['date'])}</b></div>
+<div><span>Approved shifts:</span> <b>{len(d['rows'])}</b></div><div></div></div>
 <h2>Salesman-wise</h2>
 <table><tr><th>Salesman</th>{fuel_heads}<th class="n">Sale</th><th class="n">Cash</th><th class="n">Paytm</th>
-<th class="n">CCMS</th><th class="n">Credit</th><th class="n">Creditor ko cash</th><th class="n">Cash jama</th>
+<th class="n">CCMS</th><th class="n">Credit</th><th class="n">Cash advance</th><th class="n">Cash handed over</th>
 <th class="n">Short / Excess</th></tr>{''.join(body_rows)}</table>
 {pend_html}
 {credit_html}
 {received_html}
 {inflow_html}
-<div class="end"><div class="box">Din ki kul sale: <b>{_rs(t['sale'])}</b> &nbsp;·&nbsp; Manager ke paas kul cash: <b>{_rs(inf.get('cash', t['cash_jama']))}</b>
-&nbsp;·&nbsp; Kul farak: <b>{_diff_html(t['difference'])}</b></div>
+<div class="end"><div class="box">Total sale for the day: <b>{_rs(t['sale'])}</b> &nbsp;·&nbsp; Total cash with Manager: <b>{_rs(inf.get('cash', t['cash_jama']))}</b>
+&nbsp;·&nbsp; Net difference: <b>{_diff_html(t['difference'])}</b></div>
 <div class="sign"><div>Manager</div><div></div><div>Owner</div></div></div>"""
-    return _page("Din ka Salesman Summary", pump, body, wide=True)
+    return _page("Daily Salesman Summary", pump, body, wide=True)

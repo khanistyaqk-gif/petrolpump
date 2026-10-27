@@ -110,6 +110,12 @@ Status:
 
 ---
 
+- ✅ **Approve tabhi jab duty ke har nozzle ki closing ho** aur saved closing mein har nozzle ho
+  (closing ke baad naya nozzle allot hua to pehle uski closing).
+- ✅ Salesman hisaab bhejte waqt jis nozzle ki entry nahi hai uski warning dekhta hai.
+
+---
+
 ## 8. Credit Party (Udhaar)
 
 - ✅ Party: naam, phone, credit limit, gaadiyon ki list, active/band.
@@ -189,7 +195,17 @@ Status:
 
 ---
 
+## 13b. App ki bhasha
+
+- ✅ App ke saare screen, button, message, error aur print report **professional English** mein.
+  (Ye LOGIC.md aapke liye Hinglish mein hi hai.)
+- Shabd: Duty → **Shift**, Hisaab → **Settlement**, Udhaar → **Credit sale**, Party ko cash diya → **Cash advance**,
+  Galla → **Cash in hand**, Kharcha → **Expenses**, Tanker inward → **Fuel purchase**, Barabar → **Matched**.
+- Kharcha categories: Salary, Electricity, Maintenance, Transport, Office, Bank charges, Rent, Miscellaneous.
+
 ## 14. Code ki sakhti (v2 mein hamesha)
+
+- ✅ Login ki chaabi (token) URL mein nahi rehti — screenshot / link share karne se login bahar nahi jata.
 
 - ✅ Paise aur litre ke liye `Decimal` (purana app `float` use karta hai — chhoti rounding galtiyan sambhav).
 - ✅ **R10 (v2):** approve ek database transaction mein (`approve_settlement_v2`) — test kiya: tank na ho to stock, credit, entries kuch nahi badla.

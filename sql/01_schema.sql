@@ -304,14 +304,14 @@ begin
     if p_delta = 0 then return null; end if;
     select * into tk from stock_tanks where fuel_type = p_fuel and is_active for update;
     if not found then
-        raise exception '% ka tank set nahi hai. Owner > Tanks mein banayein.', p_fuel;
+        raise exception 'No tank is set up for %. Please create one in Owner > Tanks.', p_fuel;
     end if;
     v_new := round(tk.current_stock + p_delta, 2);
     if v_new < 0 then
-        raise exception '% ka stock kam hai: tank % L, ghatana % L', p_fuel, tk.current_stock, -p_delta;
+        raise exception 'Insufficient % stock: tank has % L, required % L', p_fuel, tk.current_stock, -p_delta;
     end if;
     if v_new > tk.capacity_liters then
-        raise exception '% tank ki capacity (% L) se zyada ho jayega (% L)', p_fuel, tk.capacity_liters, v_new;
+        raise exception '% tank capacity (% L) would be exceeded (% L)', p_fuel, tk.capacity_liters, v_new;
     end if;
     update stock_tanks set current_stock = v_new where id = tk.id;
     insert into stock_moves (date, fuel_type, delta, kind, ref_table, ref_id, note, created_by)
@@ -327,27 +327,42 @@ language plpgsql security definer set search_path = public as $$
 declare
     s record; fl record; tx record;
     v_pay numeric; v_diff numeric; v_cash_in numeric;
-    v_effect jsonb := '{}'::jsonb; v_new numeric;
+    v_effect jsonb := '{}'::jsonb; v_new numeric; v_missing text;
 begin
     select * into s from settlements where id = p_settlement_id for update;
-    if not found then raise exception 'Settlement nahi mila'; end if;
+    if not found then raise exception 'Settlement not found'; end if;
     if s.status = 'approved' or s.stock_deducted then
-        raise exception 'Ye hisaab pehle hi approve ho chuka hai';
+        raise exception 'This settlement has already been approved';
     end if;
     if jsonb_array_length(s.nozzle_readings) = 0 then
-        raise exception 'Pehle closing reading save karein';
+        raise exception 'Please save the closing readings first';
+    end if;
+    -- Duty ke har nozzle ki closing honi chahiye (closing ke baad allot hua nozzle chhoot na jaye)
+    select string_agg(n.nozzle_name, ', ') into v_missing
+      from shift_assignments a join nozzles n on n.id = a.nozzle_id
+     where a.shift_id = s.shift_id and a.is_active;
+    if v_missing is not null then
+        raise exception 'Closing reading pending for: %. Please save the closing first.', v_missing;
+    end if;
+    select string_agg(n.nozzle_name, ', ') into v_missing
+      from shift_assignments a join nozzles n on n.id = a.nozzle_id
+     where a.shift_id = s.shift_id and a.closing_reading is not null
+       and not exists (select 1 from jsonb_array_elements(s.nozzle_readings) x
+                        where (x->>'assignment_id')::bigint = a.id);
+    if v_missing is not null then
+        raise exception 'Please save the closing again (% is not included).', v_missing;
     end if;
     if s.meter_total > 0 and s.breakup_submitted_at is null then
-        raise exception 'Salesman ne abhi payment hisaab nahi bheja';
+        raise exception 'The salesman has not submitted the payment settlement yet';
     end if;
 
     v_pay  := s.cash_amount + s.paytm_amount + s.ccms_amount + s.credit_amount;
     v_diff := round(s.meter_total - v_pay, 2);
     if abs(v_diff) > p_tolerance then
-        raise exception 'Farak Rs % hai (±% se zyada). Hold ya Reopen karein.', v_diff, p_tolerance;
+        raise exception 'Difference is Rs % (more than ±%). Please hold or return the settlement.', v_diff, p_tolerance;
     end if;
     if s.cash_given_to_creditor_amount > s.cash_amount then
-        raise exception 'Creditor ko diya cash, kul cash se zyada hai';
+        raise exception 'Cash advanced to credit parties exceeds total cash';
     end if;
 
     -- 1. Stock: har fuel ka net sale litre minus
@@ -390,7 +405,7 @@ begin
         update credit_parties set current_balance = current_balance + tx.amount where id = tx.party_id;
         update credit_transactions
            set status = 'approved', approved_by = p_manager_id, approved_at = now(),
-               approval_note = 'Settlement approve'
+               approval_note = 'Approved with settlement'
          where id = tx.id;
     end loop;
 
@@ -420,11 +435,11 @@ create or replace function public.record_party_payment_v2(
 language plpgsql security definer set search_path = public as $$
 declare v_id bigint; p record;
 begin
-    if p_amount is null or p_amount <= 0 then raise exception 'Amount 0 se zyada ho'; end if;
-    if p_mode not in ('cash','bank','paytm','ccms') then raise exception 'Galat payment mode'; end if;
-    if p_mode = 'bank' and p_bank_id is null then raise exception 'Bank account chunein'; end if;
+    if p_amount is null or p_amount <= 0 then raise exception 'Amount must be greater than 0'; end if;
+    if p_mode not in ('cash','bank','paytm','ccms') then raise exception 'Invalid payment mode'; end if;
+    if p_mode = 'bank' and p_bank_id is null then raise exception 'Please select a bank account'; end if;
     select * into p from credit_parties where id = p_party_id for update;
-    if not found then raise exception 'Party nahi mili'; end if;
+    if not found then raise exception 'Party not found'; end if;
 
     insert into credit_transactions (date, party_id, type, amount, payment_mode, bank_account_id,
                                      reference_id, note, status, created_by, approved_by, approved_at)
@@ -446,9 +461,9 @@ create or replace function public.party_opening_v2(
 ) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-    if p_amount is null or p_amount <= 0 then raise exception 'Amount 0 se zyada ho'; end if;
+    if p_amount is null or p_amount <= 0 then raise exception 'Amount must be greater than 0'; end if;
     if exists (select 1 from credit_transactions where party_id = p_party_id and type = 'opening') then
-        raise exception 'Is party ka opening balance pehle hi daala ja chuka hai';
+        raise exception 'Opening balance for this party has already been entered';
     end if;
     perform 1 from credit_parties where id = p_party_id for update;
     insert into credit_transactions (date, party_id, type, amount, status, note, created_by, approved_by, approved_at)
@@ -462,13 +477,13 @@ language plpgsql security definer set search_path = public as $$
 declare r record;
 begin
     select * into r from fuel_inward where id = p_id for update;
-    if not found then raise exception 'Inward entry nahi mili'; end if;
-    if r.status <> 'pending' then raise exception 'Ye entry pehle hi % hai', r.status; end if;
+    if not found then raise exception 'Fuel purchase entry not found'; end if;
+    if r.status <> 'pending' then raise exception 'This entry is already %', r.status; end if;
     perform adjust_tank_v2(r.fuel_type, r.liters, 'inward', r.date, 'fuel_inward', r.id::text,
                            coalesce(r.invoice_no, ''), p_by);
     insert into money_txns (date, account, oil_company_id, amount, kind, ref_table, ref_id, note, created_by)
     values (r.date, 'oil', r.oil_company_id, r.amount, 'fuel_inward', 'fuel_inward', r.id::text,
-            'Bill ' || coalesce(r.invoice_no, '-'), p_by);
+            'Invoice ' || coalesce(r.invoice_no, '-'), p_by);
     update fuel_inward set status = 'approved', approved_by = p_by, approved_at = now() where id = r.id;
 end $$;
 
@@ -478,8 +493,8 @@ language plpgsql security definer set search_path = public as $$
 declare r record; v_new numeric;
 begin
     select * into r from stock_dips where id = p_id for update;
-    if not found then raise exception 'Dip entry nahi mili'; end if;
-    if r.status <> 'pending' then raise exception 'Ye entry pehle hi % hai', r.status; end if;
+    if not found then raise exception 'Dip entry not found'; end if;
+    if r.status <> 'pending' then raise exception 'This entry is already %', r.status; end if;
     if r.variance <> 0 then
         v_new := adjust_tank_v2(r.fuel_type, r.variance, 'dip_adjust', r.date, 'stock_dips', r.id::text,
                                 r.note, p_by);
@@ -494,13 +509,13 @@ language plpgsql security definer set search_path = public as $$
 declare r record; v_cash numeric;
 begin
     select * into r from expenses where id = p_id for update;
-    if not found then raise exception 'Kharcha nahi mila'; end if;
-    if r.status <> 'pending' then raise exception 'Ye kharcha pehle hi % hai', r.status; end if;
+    if not found then raise exception 'Expense not found'; end if;
+    if r.status <> 'pending' then raise exception 'This expense is already %', r.status; end if;
     if r.payment_mode = 'cash' then
         perform pg_advisory_xact_lock(hashtext('money_cash'));
         select coalesce(sum(amount), 0) into v_cash from money_txns where account = 'cash';
         if v_cash < r.amount then
-            raise exception 'Galle mein cash kam hai: Rs % hai, kharcha Rs %', v_cash, r.amount;
+            raise exception 'Insufficient cash in hand: Rs % available, expense Rs %', v_cash, r.amount;
         end if;
     end if;
     insert into money_txns (date, account, bank_account_id, amount, kind, ref_table, ref_id, note, created_by)
@@ -518,13 +533,13 @@ create or replace function public.money_transfer_v2(
 language plpgsql security definer set search_path = public as $$
 declare v_bal numeric; v_from_amt numeric; v_to_amt numeric;
 begin
-    if p_amount is null or p_amount <= 0 then raise exception 'Amount 0 se zyada ho'; end if;
+    if p_amount is null or p_amount <= 0 then raise exception 'Amount must be greater than 0'; end if;
     -- cash / paytm / ccms minus mein nahi ja sakte (bank OD/CC ja sakta hai)
     if p_from in ('cash','paytm','ccms') then
         perform pg_advisory_xact_lock(hashtext('money_' || p_from));
         select coalesce(sum(amount), 0) into v_bal from money_txns where account = p_from;
         if v_bal < p_amount then
-            raise exception '% mein sirf Rs % hai, Rs % nahi nikal sakte', p_from, v_bal, p_amount;
+            raise exception 'Only Rs % available in %, cannot withdraw Rs %', v_bal, p_from, p_amount;
         end if;
     end if;
     v_from_amt := -round(p_amount, 2);

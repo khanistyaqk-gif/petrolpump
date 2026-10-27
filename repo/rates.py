@@ -43,10 +43,10 @@ def activity_on_or_after(on_date: str) -> bool:
 
 def set_rate(fuel_type: str, price, effective_from: str, by: str):
     if fuel_type not in FUEL_TYPES:
-        raise AppError("Galat fuel type.")
+        raise AppError("Invalid fuel type.")
     price = q2(price)
     if price <= 0:
-        raise AppError("Rate 0 se zyada hona chahiye.")
+        raise AppError("Rate must be greater than 0.")
 
     old = one(db().table("fuel_rates").select("*").eq("fuel_type", fuel_type)
               .eq("effective_from", effective_from).limit(1).execute())

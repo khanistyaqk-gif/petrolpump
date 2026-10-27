@@ -2,18 +2,18 @@
 from core.calc import q2, to_json
 from core.db import AppError, audit, db, now_ist, rows
 
-CATEGORIES = ["salary", "bijli", "maintenance", "transport", "office", "bank charges", "kiraya", "misc"]
+CATEGORIES = ["Salary", "Electricity", "Maintenance", "Transport", "Office", "Bank charges", "Rent", "Miscellaneous"]
 
 
 def add(on_date, category, description, amount, mode, bank_id, ref, by):
     if category not in CATEGORIES:
-        raise AppError("Category chunein.")
+        raise AppError("Please select a category.")
     if q2(amount) <= 0:
-        raise AppError("Amount 0 se zyada ho.")
+        raise AppError("Amount must be greater than 0.")
     if mode not in ("cash", "bank"):
-        raise AppError("Payment cash ya bank se.")
+        raise AppError("Payment mode must be cash or bank.")
     if mode == "bank" and not bank_id:
-        raise AppError("Bank chunein.")
+        raise AppError("Please select a bank account.")
     db().table("expenses").insert({
         "date": on_date, "category": category, "description": (description or "").strip() or None,
         "amount": to_json(amount), "payment_mode": mode, "bank_account_id": bank_id if mode == "bank" else None,
@@ -45,5 +45,5 @@ def reject(expense_id, by):
     res = db().table("expenses").update({"status": "rejected", "approved_by": by, "approved_at": now_ist()}) \
         .eq("id", expense_id).eq("status", "pending").execute()
     if not rows(res):
-        raise AppError("Ye kharcha pending nahi hai.")
+        raise AppError("This expense is not pending.")
     audit("expense_rejected", by, {"id": expense_id})

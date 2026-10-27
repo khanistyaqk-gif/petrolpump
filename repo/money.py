@@ -7,12 +7,12 @@ from core.calc import ZERO, D, q2, to_json
 from core.db import AppError, audit, db, rows, today_ist
 
 ACCOUNTS = ["cash", "bank", "paytm", "ccms", "oil"]
-ACCOUNT_LABELS = {"cash": "Cash (galla)", "bank": "Bank", "paytm": "Paytm / UPI", "ccms": "CCMS / Card",
-                  "oil": "Oil company ko dena"}
+ACCOUNT_LABELS = {"cash": "Cash in hand", "bank": "Bank", "paytm": "Paytm / UPI", "ccms": "CCMS / Card",
+                  "oil": "Payable to oil company"}
 KIND_LABELS = {
-    "sale": "Sale (settlement)", "party_payment": "Party se payment", "cash_deposit": "Cash bank mein jama",
-    "paytm_settlement": "Paytm bank mein aaya", "ccms_adjust": "CCMS oil company mein adjust",
-    "oil_payment": "Oil company ko payment", "fuel_inward": "Tanker bill", "expense": "Kharcha",
+    "sale": "Sale (settlement)", "party_payment": "Payment from credit party", "cash_deposit": "Cash deposited to bank",
+    "paytm_settlement": "Paytm settled to bank", "ccms_adjust": "CCMS adjusted with oil company",
+    "oil_payment": "Payment to oil company", "fuel_inward": "Fuel purchase invoice", "expense": "Expense",
     "opening": "Opening balance",
 }
 
@@ -51,7 +51,7 @@ def balance(account, ref=None, as_of=None):
 
 def _transfer(kind, on_date, amount, frm, frm_bank, to, to_bank, oil_co, ref, note, by):
     if q2(amount) <= 0:
-        raise AppError("Amount 0 se zyada ho.")
+        raise AppError("Amount must be greater than 0.")
     try:
         db().rpc("money_transfer_v2", {
             "p_kind": kind, "p_date": on_date, "p_amount": to_json(amount),
@@ -67,43 +67,43 @@ def _transfer(kind, on_date, amount, frm, frm_bank, to, to_bank, oil_co, ref, no
 
 def cash_deposit(on_date, amount, bank_id, ref, note, by):
     if not bank_id:
-        raise AppError("Bank chunein.")
+        raise AppError("Please select a bank account.")
     _transfer("cash_deposit", on_date, amount, "cash", None, "bank", bank_id, None, ref, note, by)
 
 
 def paytm_settlement(on_date, amount, bank_id, ref, note, by):
     if not bank_id:
-        raise AppError("Bank chunein.")
+        raise AppError("Please select a bank account.")
     _transfer("paytm_settlement", on_date, amount, "paytm", None, "bank", bank_id, None, ref, note, by)
 
 
 def ccms_adjust(on_date, amount, oil_company_id, ref, note, by):
     if not oil_company_id:
-        raise AppError("Oil company chunein.")
+        raise AppError("Please select an oil company.")
     _transfer("ccms_adjust", on_date, amount, "ccms", None, "oil", None, oil_company_id, ref, note, by)
 
 
 def oil_payment(on_date, amount, bank_id, oil_company_id, ref, note, by):
     if not bank_id or not oil_company_id:
-        raise AppError("Bank aur oil company dono chunein.")
+        raise AppError("Please select both the bank account and the oil company.")
     _transfer("oil_payment", on_date, amount, "bank", bank_id, "oil", None, oil_company_id, ref, note, by)
 
 
 def set_opening(account, ref_id, amount, on_date, by):
     """Shuru ka balance (ek account ka ek hi baar). Bank/oil minus ho sakte hain."""
     if account not in ACCOUNTS:
-        raise AppError("Galat account.")
+        raise AppError("Invalid account.")
     amount = q2(amount)
     if amount == 0:
-        raise AppError("Amount daalein.")
+        raise AppError("Please enter an amount.")
     if amount < 0 and account in ("cash", "paytm", "ccms"):
-        raise AppError("Cash/Paytm/CCMS ka opening minus nahi ho sakta.")
+        raise AppError("Opening balance for Cash / Paytm / CCMS cannot be negative.")
     if account in ("bank", "oil") and not ref_id:
-        raise AppError("Bank / oil company chunein.")
+        raise AppError("Please select the bank account / oil company.")
     existing = [t for t in txns(account=account) if t["kind"] == "opening" and _key(t) == _key(
         {"account": account, "bank_account_id": ref_id, "oil_company_id": ref_id})]
     if existing:
-        raise AppError("Is account ka opening balance pehle hi daala ja chuka hai.")
+        raise AppError("Opening balance for this account has already been entered.")
     db().table("money_txns").insert({
         "date": on_date or today_ist(), "account": account,
         "bank_account_id": ref_id if account == "bank" else None,

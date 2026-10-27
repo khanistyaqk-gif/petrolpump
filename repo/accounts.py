@@ -19,9 +19,9 @@ def oil_companies(active_only=True):
 def _add(table, name, by):
     name = (name or "").strip()
     if not name:
-        raise AppError("Naam daalein.")
+        raise AppError("Please enter a name.")
     if any(r["name"].lower() == name.lower() for r in rows(db().table(table).select("name").execute())):
-        raise AppError("Ye naam pehle se hai.")
+        raise AppError("This name already exists.")
     db().table(table).insert({"name": name}).execute()
     audit(f"{table}_added", by, {"name": name})
 
@@ -36,7 +36,7 @@ def add_oil_company(name, by):
 
 def set_active(table, row_id, active, by):
     if table not in ("bank_accounts", "oil_companies"):
-        raise AppError("Galat table.")
+        raise AppError("Invalid table.")
     db().table(table).update({"is_active": bool(active)}).eq("id", row_id).execute()
     audit(f"{table}_active", by, {"id": row_id, "active": bool(active)})
 

@@ -1,4 +1,4 @@
-"""Chhote UI helpers."""
+"""Small UI helpers."""
 import streamlit as st
 
 from core.calc import CalcError, D, q2
@@ -31,15 +31,15 @@ def fuel(ft) -> str:
 
 
 def run(fn, *args, success: str | None = None, rerun: bool = True, **kwargs):
-    """Kaam chalao; AppError ho to saaf message dikhao. Safal ho to True."""
+    """Run an action; show a clean message on AppError. Returns True on success."""
     try:
         result = fn(*args, **kwargs)
     except (AppError, CalcError) as exc:
         st.error(str(exc))
         return False
     except Exception as exc:   # noqa: BLE001
-        st.error("Kuch gadbad hui. Dobara try karein.")
-        with st.expander("Detail (Owner/Manager ke liye)"):
+        st.error("Something went wrong. Please try again.")
+        with st.expander("Technical details (Owner / Manager)"):
             st.code(str(exc))
         return False
     if success:
@@ -56,14 +56,14 @@ def flash():
 
 
 def num(label, key, value=0.0, step=0.01, min_value=0.0, help=None):
-    """Number input jo Decimal deta hai (2 decimal)."""
+    """Number input that returns a Decimal (2 decimals)."""
     v = st.number_input(label, min_value=min_value, value=float(value or 0), step=step,
                         format="%.2f", key=key, help=help)
     return q2(D(str(v)))
 
 
 STATUS_LABELS = {
-    "pending": "🟡 Manager ke paas", "hold": "⏸️ Hold", "reopened": "🔄 Wapas bheja",
+    "pending": "🟡 Pending approval", "hold": "⏸️ On hold", "reopened": "🔄 Returned to salesman",
     "approved": "✅ Approved", "rejected": "❌ Rejected",
 }
 

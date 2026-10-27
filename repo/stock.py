@@ -19,18 +19,18 @@ def _rpc(name, params):
 # ---------------- Inward ----------------
 def add_inward(on_date, fuel_type, oil_company_id, invoice_no, liters, amount, note, by):
     if fuel_type not in FUEL_TYPES:
-        raise AppError("Galat fuel.")
+        raise AppError("Invalid fuel type.")
     if not oil_company_id:
-        raise AppError("Oil company chunein.")
+        raise AppError("Please select an oil company.")
     if q2(liters) <= 0 or q2(amount) <= 0:
-        raise AppError("Litre aur bill amount dono daalein.")
+        raise AppError("Please enter both litres and invoice amount.")
     tank = tanks.get_by_fuel(fuel_type)
     if not tank:
-        raise AppError("Is fuel ka tank set nahi hai.")
+        raise AppError("No tank is set up for this fuel.")
     invoice_no = (invoice_no or "").strip()
     if invoice_no and rows(db().table("fuel_inward").select("id").eq("invoice_no", invoice_no)
                            .eq("oil_company_id", oil_company_id).in_("status", ["pending", "approved"]).execute()):
-        raise AppError("Ye bill number pehle se darj hai.")
+        raise AppError("This invoice number has already been entered.")
     db().table("fuel_inward").insert({
         "date": on_date, "fuel_type": fuel_type, "oil_company_id": oil_company_id,
         "invoice_no": invoice_no or None, "liters": to_json(liters), "amount": to_json(amount),
@@ -53,11 +53,11 @@ def approve_inward(inward_id, by):
 
 def reject(table, row_id, by):
     if table not in ("fuel_inward", "stock_dips"):
-        raise AppError("Galat table.")
+        raise AppError("Invalid table.")
     res = db().table(table).update({"status": "rejected", "approved_by": by, "approved_at": now_ist()}) \
         .eq("id", row_id).eq("status", "pending").execute()
     if not rows(res):
-        raise AppError("Ye entry pending nahi hai.")
+        raise AppError("This entry is not pending.")
     audit(f"{table}_rejected", by, {"id": row_id})
 
 
@@ -65,12 +65,12 @@ def reject(table, row_id, by):
 def add_dip(on_date, fuel_type, physical, dip_cm, note, by):
     tank = tanks.get_by_fuel(fuel_type)
     if not tank:
-        raise AppError("Is fuel ka tank set nahi hai.")
+        raise AppError("No tank is set up for this fuel.")
     physical = q2(physical)
     if physical < 0 or physical > D(tank.get("capacity_liters")):
-        raise AppError("Physical stock 0 aur capacity ke beech ho.")
+        raise AppError("Physical stock must be between 0 and tank capacity.")
     if rows(db().table("stock_dips").select("id").eq("fuel_type", fuel_type).eq("status", "pending").execute()):
-        raise AppError("Is fuel ki ek dip pehle se pending hai. Pehle use approve/reject karein.")
+        raise AppError("A dip entry for this fuel is already pending. Approve or reject it first.")
     book = q2(tank.get("current_stock"))
     db().table("stock_dips").insert({
         "date": on_date, "fuel_type": fuel_type, "dip_cm": to_json(dip_cm) if dip_cm else None,

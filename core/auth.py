@@ -1,4 +1,4 @@
-"""Login, logout, current user aur role check."""
+"""Login, logout, current user and role checks."""
 import time
 
 import streamlit as st
@@ -9,14 +9,14 @@ from repo import duties, users
 
 MAX_FAILS = 5
 LOCK_SECONDS = 60
-RECHECK_SECONDS = 60   # har minute profile/duty dobara check (band user turant bahar)
+RECHECK_SECONDS = 60   # re-check profile/shift every minute (disabled users are signed out)
 
 
 def _allowed(profile) -> tuple[bool, str]:
     if not profile or not profile.get("is_active"):
-        return False, "Account band hai ya mila nahi. Owner se baat karein."
+        return False, "This account is inactive or does not exist. Please contact the Owner."
     if profile["role"] == "salesman" and not duties.active_duty_for(profile["id"]):
-        return False, "Salesman login sirf duty chalu hone par. Manager se duty shuru karwayein."
+        return False, "Salesmen can log in only during an active shift. Please ask the Manager to start your shift."
     return True, ""
 
 
@@ -30,7 +30,7 @@ def _set_user(profile):
 
 def login(login_id: str, password: str) -> tuple[bool, str]:
     if st.session_state.get("_locked_until", 0) > time.time():
-        return False, "Bahut baar galat try. 1 minute baad try karein."
+        return False, "Too many failed attempts. Please try again in 1 minute."
     try:
         res = auth_client().auth.sign_in_with_password(
             {"email": users.login_to_email(login_id), "password": password})
@@ -41,7 +41,7 @@ def login(login_id: str, password: str) -> tuple[bool, str]:
         if fails >= MAX_FAILS:
             st.session_state["_locked_until"] = time.time() + LOCK_SECONDS
             st.session_state["_fails"] = 0
-        return False, "Login ID ya password galat hai."
+        return False, "Invalid login ID or password."
 
     st.session_state["_fails"] = 0
     profile = users.get_profile(uid)
@@ -69,7 +69,7 @@ def current_user():
     try:
         profile = users.get_profile(uid)
     except Exception:
-        return user   # network ki chhoti dikkat par logout nahi
+        return user   # do not sign out on a brief network error
     ok, _ = _allowed(profile)
     if not ok:
         session.clear()
@@ -81,9 +81,9 @@ def current_user():
 def require(*roles):
     user = current_user()
     if not user:
-        st.error("Pehle login karein.")
+        st.error("Please log in first.")
         st.stop()
     if user["role"] not in roles:
-        st.error("Aapko is page ki permission nahi hai.")
+        st.error("You do not have permission to view this page.")
         st.stop()
     return user

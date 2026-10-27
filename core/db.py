@@ -17,7 +17,19 @@ ROLE_LABELS = {"owner": "Owner", "manager": "Manager", "salesman": "Salesman"}
 
 
 class AppError(Exception):
-    """User ko dikhane layak error (Hinglish message)."""
+    """Error with a message that is safe to show to the user."""
+
+
+def supabase_url() -> str | None:
+    """'https://x.supabase.co/rest/v1/' jaisa URL bhi chal jaye — sirf project ka address rakho."""
+    url = setting("SUPABASE_URL")
+    if not url:
+        return None
+    url = url.strip().rstrip("/")
+    for tail in ("/rest/v1", "/auth/v1"):
+        if url.endswith(tail):
+            url = url[: -len(tail)]
+    return url.rstrip("/")
 
 
 def setting(name: str, default=None):
@@ -36,17 +48,17 @@ def setting(name: str, default=None):
 @st.cache_resource
 def db() -> Client:
     """Server-side data client (service key). Browser tak kabhi nahi jaata."""
-    url, key = setting("SUPABASE_URL"), setting("SUPABASE_SERVICE_KEY")
+    url, key = supabase_url(), setting("SUPABASE_SERVICE_KEY")
     if not url or not key:
-        raise RuntimeError("SUPABASE_URL aur SUPABASE_SERVICE_KEY secrets mein daalein.")
+        raise RuntimeError("Please add SUPABASE_URL and SUPABASE_SERVICE_KEY to the app secrets.")
     return create_client(url, key)
 
 
 def auth_client() -> Client:
     """Har login ke liye naya client — ek user ka session dusre se mix na ho."""
-    url, key = setting("SUPABASE_URL"), setting("SUPABASE_ANON_KEY")
+    url, key = supabase_url(), setting("SUPABASE_ANON_KEY")
     if not url or not key:
-        raise RuntimeError("SUPABASE_URL aur SUPABASE_ANON_KEY secrets mein daalein.")
+        raise RuntimeError("Please add SUPABASE_URL and SUPABASE_ANON_KEY to the app secrets.")
     return create_client(url, key)
 
 

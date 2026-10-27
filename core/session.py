@@ -2,7 +2,8 @@
 Refresh ke baad login bana rahe — signed token (HMAC) browser localStorage/cookie mein.
 Purane app ka tested tareeka, saaf karke. Token APP_SESSION_SECRET se sign hota hai.
 
-Dhyan: token page URL mein bhi aata hai (?s=...). Login ke baad URL ya screenshot share na karein.
+Token URL mein sirf ek pal ke liye aata hai (refresh ke baad browser se wapas laane ke liye),
+phir turant hata diya jaata hai — taaki screenshot / link share karne se login bahar na jaye.
 """
 import base64
 import hashlib
@@ -86,8 +87,16 @@ def save(user_id: str):
     st.session_state.pop("_logged_out", None)
     token = make_token(user_id)
     st.session_state["_token"] = token
-    st.query_params[PARAM] = token
+    _drop_url_token()
     _bridge(token=token)
+
+
+def _drop_url_token():
+    try:
+        if PARAM in st.query_params:
+            del st.query_params[PARAM]
+    except Exception:
+        pass
 
 
 def clear():
@@ -102,8 +111,7 @@ def keep():
     """Har run par token browser mein save rahe (login ke turant baad rerun se bridge chhoot sakta hai)."""
     token = st.session_state.get("_token")
     if token:
-        if st.query_params.get(PARAM) != token:
-            st.query_params[PARAM] = token
+        _drop_url_token()
         _bridge(token=token)
 
 
@@ -124,6 +132,5 @@ def restore_user_id() -> str | None:
         clear()
         return None
     st.session_state["_token"] = token
-    if st.query_params.get(PARAM) != token:
-        st.query_params[PARAM] = token
+    _drop_url_token()          # URL se chaabi turant hatao
     return user_id

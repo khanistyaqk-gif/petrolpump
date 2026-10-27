@@ -50,12 +50,12 @@ def approved_on(on_date):
 def submit_breakup(salesman_id, cash, paytm, ccms, credit_items):
     duty = duties.active_duty_for(salesman_id)
     if not duty:
-        raise AppError("Aapki duty chalu nahi hai.")
+        raise AppError("You do not have an active shift.")
     old = for_shift(duty["id"])
     if old and old.get("status") in ("hold", "approved"):
-        raise AppError("Is duty ka hisaab Manager ke paas hai.")
+        raise AppError("This settlement is with the Manager.")
     if old and old.get("breakup_submitted_at"):
-        raise AppError("Hisaab pehle hi bhej diya hai. Badlav ke liye Manager se reopen karwayein.")
+        raise AppError("Settlement already submitted. Ask the Manager to return it if you need to make changes.")
 
     # ---- credit lines check ----
     clean, credit_sum, given_sum, warnings = [], ZERO, ZERO, []
@@ -64,17 +64,17 @@ def submit_breakup(salesman_id, cash, paytm, ccms, credit_items):
         if amt == 0 and given == 0:
             continue
         if amt < 0 or given < 0:
-            raise AppError(f"Credit line {i}: amount minus mein nahi ho sakta.")
+            raise AppError(f"Credit line {i}: amount cannot be negative.")
         party = credit.get(item.get("party_id"))
         if not party or not party.get("is_active"):
-            raise AppError(f"Credit line {i}: party nahi mili ya band hai.")
+            raise AppError(f"Credit line {i}: party not found or inactive.")
         vehicle = (item.get("vehicle") or "").strip().upper()
         allowed = credit.vehicles_of(party)
         if amt > 0 and allowed and not vehicle_allowed(vehicle, allowed):
-            raise AppError(f"{party['name']}: gaadi '{vehicle or '-'}' party ki list mein nahi hai.")
+            raise AppError(f"{party['name']}: vehicle '{vehicle or '-'}' is not registered for this party.")
         if credit_limit_exceeded(party.get("current_balance"), credit.pending_increase(party["id"]),
                                  amt + given, party.get("credit_limit")):
-            warnings.append(f"{party['name']} ki credit limit ₹{q2(party.get('credit_limit'))} paar ho rahi hai.")
+            warnings.append(f"{party['name']}: credit limit of ₹{q2(party.get('credit_limit'))} will be exceeded.")
         clean.append({**item, "party": party, "amount": amt, "cash_given": given, "vehicle": vehicle})
         credit_sum += amt
         given_sum += given
@@ -86,15 +86,15 @@ def submit_breakup(salesman_id, cash, paytm, ccms, credit_items):
     except CalcError as exc:
         raise AppError(str(exc))
     if not ok:
-        raise AppError(f"Cash + Paytm + CCMS + Credit aapki entries (₹{entries}) ke barabar nahi. "
-                       f"Farak ₹{diff}.")
+        raise AppError(f"Cash + Paytm + CCMS + Credit does not match your sale entries (₹{entries}). "
+                       f"Difference: ₹{diff}.")
 
     payload = {
         "cash_amount": to_json(cash), "paytm_amount": to_json(paytm), "ccms_amount": to_json(ccms),
         "credit_amount": to_json(credit_sum), "cash_given_to_creditor_amount": to_json(given_sum),
         "cash_transfer_expected": to_json(transfer), "entries_total": to_json(entries),
         "breakup_submitted_at": now_ist(), "status": "pending",
-        "manager_note": "Salesman ne hisaab bheja",
+        "manager_note": "Submitted by salesman",
     }
     if closing_saved(old):
         payload["difference"] = to_json(settlement_difference(old.get("meter_total"), cash, paytm, ccms, credit_sum))
@@ -112,7 +112,7 @@ def submit_breakup(salesman_id, cash, paytm, ccms, credit_items):
 
     created_txn_ids = []
     try:
-        credit.reject_open_for_reference(sid, salesman_id, "Naya hisaab bheja gaya")
+        credit.reject_open_for_reference(sid, salesman_id, "Replaced by new submission")
         for item in clean:
             for ttype, amt in (("sale", item["amount"]), ("cash_given", item["cash_given"])):
                 if amt > 0:
@@ -128,7 +128,7 @@ def submit_breakup(salesman_id, cash, paytm, ccms, credit_items):
         else:
             restore = {k: old.get(k) for k in payload}
             db().table("settlements").update(restore).eq("id", sid).execute()
-        raise AppError(f"Hisaab save nahi hua, dobara try karein. ({exc})")
+        raise AppError(f"Settlement could not be saved. Please try again. ({exc})")
 
     return warnings
 
@@ -138,7 +138,7 @@ def closing_preview(shift_id, closing_inputs):
     """Save kiye bina hisaab dikhao. Galti ho to CalcError/AppError."""
     shift = duties.get(shift_id)
     if not shift:
-        raise AppError("Duty nahi mili.")
+        raise AppError("Shift not found.")
     shift_date = shift.get("date") or today_ist()
     result = []
     for a in duties.assignments(shift_id):
@@ -153,15 +153,15 @@ def closing_preview(shift_id, closing_inputs):
 
         if first_time:
             if D(closing) < D(nozzle.get("current_reading")):
-                raise AppError(f"{name}: closing ({q2(closing)}) meter ki abhi ki reading "
-                               f"({q2(nozzle.get('current_reading'))}) se kam hai (testing judi hai).")
+                raise AppError(f"{name}: closing ({q2(closing)}) is less than the current meter reading "
+                               f"({q2(nozzle.get('current_reading'))}, includes testing).")
         else:
             newer = one(db().table("shift_assignments").select("id").eq("nozzle_id", a["nozzle_id"])
                         .gt("id", a["id"]).limit(1).execute())
             if newer:
-                raise AppError(f"{name} agli duty mein ja chuka hai — iski closing ab nahi badal sakti.")
+                raise AppError(f"{name} has moved to the next shift — its closing reading can no longer be changed.")
             if D(nozzle.get("current_reading")) != D(a.get("closing_reading")):
-                raise AppError(f"{name}: closing ke baad meter badla hai — Owner se check karwayein.")
+                raise AppError(f"{name}: the meter changed after closing — please ask the Owner to check.")
 
         rate = rates.rate_for(nozzle.get("fuel_type"), shift_date)
         try:
@@ -172,14 +172,14 @@ def closing_preview(shift_id, closing_inputs):
         result.append({"assignment": a, "nozzle": nozzle, "first_time": first_time, "calc": row,
                        "fuel_type": nozzle.get("fuel_type"), "name": name, "shift_date": shift_date})
     if not result:
-        raise AppError("Is duty mein koi nozzle nahi hai.")
+        raise AppError("No nozzles are assigned to this shift.")
     return result
 
 
 def save_closing(shift_id, closing_inputs, manager_id):
     s = for_shift(shift_id)
     if s and s.get("status") == "approved":
-        raise AppError("Approved hisaab nahi badal sakta.")
+        raise AppError("An approved settlement cannot be changed.")
     preview = closing_preview(shift_id, closing_inputs)
     shift = duties.get(shift_id)
 
@@ -190,7 +190,7 @@ def save_closing(shift_id, closing_inputs, manager_id):
         q = db().table("nozzles").update({"current_reading": to_json(c["closing"])}).eq("id", a["nozzle_id"])
         q = q.eq("current_reading", expected_now) if expected_now is not None else q.is_("current_reading", "null")
         if not rows(q.execute()):
-            raise AppError(f"{p['name']}: isi waqt meter badla. Page refresh karke dobara save karein.")
+            raise AppError(f"{p['name']}: the meter was just changed. Refresh the page and save again.")
         upd = {"closing_reading": to_json(c["closing"])}
         if p["first_time"]:
             upd.update({"is_active": False, "ended_at": now_ist()})
@@ -209,7 +209,7 @@ def save_closing(shift_id, closing_inputs, manager_id):
 
     total = meter_total([p["calc"] for p in preview])
     data = {"nozzle_readings": snapshot, "meter_total": to_json(total),
-            "date": shift.get("date") or today_ist(), "manager_note": "Manager ne closing save ki"}
+            "date": shift.get("date") or today_ist(), "manager_note": "Closing recorded by manager"}
     if s:
         if s.get("breakup_submitted_at"):
             data["difference"] = to_json(settlement_difference(total, s.get("cash_amount"), s.get("paytm_amount"),
@@ -236,8 +236,8 @@ def approve(settlement_id, manager_id):
     except Exception as exc:
         msg = getattr(exc, "message", None) or str(exc)
         if "approve_settlement_v2" in msg and ("not find" in msg or "does not exist" in msg):
-            raise AppError("Database function nahi mila. sql/01_schema.sql run karein.")
-        raise AppError(f"Approve nahi hua: {msg}")
+            raise AppError("Database function not found. Please run sql/01_schema.sql.")
+        raise AppError(f"Approval failed: {msg}")
     audit("settlement_approved", manager_id, {"settlement": settlement_id})
     return getattr(res, "data", None)
 
@@ -245,8 +245,8 @@ def approve(settlement_id, manager_id):
 def hold(settlement_id, note, manager_id):
     s = get(settlement_id)
     if not s or s.get("status") == "approved":
-        raise AppError("Ye hisaab hold nahi ho sakta.")
-    db().table("settlements").update({"status": "hold", "manager_note": note or "Manager ne hold kiya"}) \
+        raise AppError("This settlement cannot be put on hold.")
+    db().table("settlements").update({"status": "hold", "manager_note": note or "Put on hold by manager"}) \
         .eq("id", settlement_id).execute()
     audit("settlement_hold", manager_id, {"settlement": settlement_id, "note": note})
 
@@ -255,11 +255,11 @@ def reopen(settlement_id, note, manager_id):
     """Salesman ko wapas bhejo: wo entries sudhaar ke hisaab dobara bhej sake."""
     s = get(settlement_id)
     if not s or s.get("status") == "approved":
-        raise AppError("Approved hisaab reopen nahi ho sakta.")
+        raise AppError("An approved settlement cannot be returned.")
     if not (duties.get(s["shift_id"]) or {}).get("is_active"):
-        raise AppError("Duty band ho chuki hai — salesman login nahi kar payega.")
+        raise AppError("The shift has ended — the salesman cannot log in.")
     db().table("settlements").update({
-        "status": "reopened", "breakup_submitted_at": None, "manager_note": note or "Manager ne reopen kiya",
+        "status": "reopened", "breakup_submitted_at": None, "manager_note": note or "Returned by manager",
     }).eq("id", settlement_id).execute()
-    credit.reject_open_for_reference(settlement_id, manager_id, "Reopen")
+    credit.reject_open_for_reference(settlement_id, manager_id, "Returned to salesman")
     audit("settlement_reopened", manager_id, {"settlement": settlement_id, "note": note})

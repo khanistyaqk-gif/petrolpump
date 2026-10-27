@@ -32,11 +32,11 @@ def active_owner_count() -> int:
 def create_user(name, login, password, role, phone, created_by):
     name, login = (name or "").strip(), (login or "").strip().lower()
     if not name or not login:
-        raise AppError("Naam aur login ID zaroori hain.")
+        raise AppError("Name and login ID are required.")
     if role not in ROLES:
-        raise AppError("Galat role.")
+        raise AppError("Invalid role.")
     if len(password or "") < 6:
-        raise AppError("Password kam se kam 6 characters ka ho.")
+        raise AppError("Password must be at least 6 characters.")
 
     email = login_to_email(login)
     try:
@@ -44,8 +44,8 @@ def create_user(name, login, password, role, phone, created_by):
     except Exception as exc:
         msg = str(exc)
         if "already" in msg.lower() or "registered" in msg.lower():
-            raise AppError("Ye login ID pehle se hai.")
-        raise AppError(f"Login nahi ban paya: {msg}")
+            raise AppError("This login ID already exists.")
+        raise AppError(f"Could not create login: {msg}")
 
     uid = res.user.id
     try:
@@ -59,7 +59,7 @@ def create_user(name, login, password, role, phone, created_by):
             db().auth.admin.delete_user(uid)
         except Exception:
             pass
-        raise AppError(f"Profile save nahi hua: {exc}")
+        raise AppError(f"Could not save profile: {exc}")
 
     audit("user_created", created_by, {"user": uid, "role": role, "login": login})
     return uid
@@ -68,15 +68,15 @@ def create_user(name, login, password, role, phone, created_by):
 def update_user(user_id, by, *, role=None, is_active=None, name=None, phone=None):
     current = get_profile(user_id)
     if not current:
-        raise AppError("User nahi mila.")
+        raise AppError("User not found.")
 
     is_last_owner = current["role"] == "owner" and current.get("is_active") and active_owner_count() <= 1
     if is_last_owner and ((role and role != "owner") or is_active is False):
-        raise AppError("Ye akela active Owner hai — iska role/status nahi badal sakte.")
+        raise AppError("This is the only active Owner — role/status cannot be changed.")
     if user_id == by and is_active is False:
-        raise AppError("Aap khud ko band nahi kar sakte.")
+        raise AppError("You cannot deactivate your own account.")
     if role and role not in ROLES:
-        raise AppError("Galat role.")
+        raise AppError("Invalid role.")
 
     fields = {k: v for k, v in {"role": role, "is_active": is_active, "name": name,
                                 "phone": phone}.items() if v is not None}
@@ -87,9 +87,9 @@ def update_user(user_id, by, *, role=None, is_active=None, name=None, phone=None
 
 def reset_password(user_id, new_password, by):
     if len(new_password or "") < 6:
-        raise AppError("Password kam se kam 6 characters ka ho.")
+        raise AppError("Password must be at least 6 characters.")
     try:
         db().auth.admin.update_user_by_id(user_id, {"password": new_password})
     except Exception as exc:
-        raise AppError(f"Password nahi badla: {exc}")
+        raise AppError(f"Could not change password: {exc}")
     audit("password_reset", by, {"user": user_id})

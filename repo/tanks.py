@@ -28,13 +28,13 @@ def adjust(fuel_type, delta, kind, ref_table, ref_id, note, by, on_date=None):
 
 def create(fuel_type, name, capacity, opening, by):
     if fuel_type not in FUEL_TYPES:
-        raise AppError("Galat fuel type.")
+        raise AppError("Invalid fuel type.")
     if get_by_fuel(fuel_type):
-        raise AppError("Is fuel ka tank pehle se hai.")
+        raise AppError("A tank for this fuel already exists.")
     if D(capacity) <= 0:
-        raise AppError("Capacity daalein.")
+        raise AppError("Please enter the tank capacity.")
     if D(opening) < 0 or D(opening) > D(capacity):
-        raise AppError("Opening stock 0 aur capacity ke beech ho.")
+        raise AppError("Opening stock must be between 0 and tank capacity.")
     res = db().table("stock_tanks").insert({
         "fuel_type": fuel_type, "tank_name": (name or "").strip() or f"{fuel_type} tank",
         "capacity_liters": to_json(capacity), "opening_stock": to_json(opening), "current_stock": 0,
@@ -53,13 +53,13 @@ def create(fuel_type, name, capacity, opening, by):
 def correct_stock(fuel_type, new_stock, reason, by):
     reason = (reason or "").strip()
     if not reason:
-        raise AppError("Kaaran likhna zaroori hai.")
+        raise AppError("Please enter a reason.")
     tank = get_by_fuel(fuel_type)
     if not tank:
-        raise AppError("Tank nahi mila.")
+        raise AppError("Tank not found.")
     delta = q2(D(new_stock) - D(tank.get("current_stock")))
     if delta == 0:
-        raise AppError("Stock pehle se yahi hai.")
+        raise AppError("Stock is already at this value.")
     adjust(fuel_type, delta, "correction", "stock_tanks", str(tank["id"]), reason, by)
     audit("tank_stock_corrected", by, {"fuel_type": fuel_type, "old": tank.get("current_stock"),
                                        "new": str(q2(new_stock)), "reason": reason})
