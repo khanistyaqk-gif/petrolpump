@@ -174,6 +174,9 @@ Status:
 - ✅ **Din ka salesman-wise summary** (A4 landscape): har salesman ki fuel-wise litre, sale, cash, paytm, ccms,
   credit, creditor ko cash, cash jama, short/excess + kul. Sirf approved duty judti hai; pending ka naam alag likha aata hai.
   Saath mein **Creditor list**: party, salesman, gaadi/slip, fuel udhaar, cash diya — aur **party-wise jod**.
+  **Creditor se payment mila (aaj)**: party, kaise (cash / bank naam / paytm / ccms), UTR, amount.
+  **Din ki kul aawak**: har mode mein salesman se + creditor se = kul.
+  Manager ke paas kul cash = salesman ka cash jama + creditor se mila cash.
 - ✅ Report duty ki tarikh se banti hai, aur saved snapshot se (baad ke rate badlav se nahi badalti).
 - ✅ Pump ka naam/pata secrets mein `PUMP_NAME`, `PUMP_ADDRESS`.
 
