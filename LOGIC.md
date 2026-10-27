@@ -186,6 +186,19 @@ Status:
 - ✅ Report duty ki tarikh se banti hai, aur saved snapshot se (baad ke rate badlav se nahi badalti).
 - ✅ Pump ka naam/pata secrets mein `PUMP_NAME`, `PUMP_ADDRESS`.
 
+**Day Closing Report (sirf Owner, Reports → 📋 Day closing):** chuni tareekh ke ant ki position —
+1) sale fuel-wise (litre, testing, amount; avg rate = saved amount / litre) + cash/Paytm/CCMS/credit/short-excess,
+2) tank-wise stock: opening, purchase, sale, dip/correction, closing (book), dip (physical),
+3) cash, har bank, Paytm, CCMS, oil company payable: opening (kal ka closing), aaj ka badlav, closing,
+4) har credit party: opening, aaj ka udhaar, aaj mila, closing, limit (limit se upar ⚠️),
+5) aaj ke kharche. Upar "Needs attention": pending settlement, chalu shift, pending approvals, short/excess,
+limit cross, stock 10% se kam / minus, aaj dip nahi, rate set nahi.
+Sab balance ledger se tareekh tak jod kar — purani tareekh ki report bhi sahi aati hai.
+
+**1000-row rule:** Supabase ek baar mein max 1000 rows deta hai. Jo bhi jod (balance, stock register, party
+statement, P&L) poori history par chalta hai, wo `fetch_all` se page-by-page laata hai — warna kuch mahine baad
+balance chupchaap galat ho jata.
+
 ## 13. Owner extras
 
 - ✅ Hisaab check: tank stock = register, party balance = khata, cash minus nahi.

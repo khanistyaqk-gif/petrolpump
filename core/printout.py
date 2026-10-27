@@ -260,3 +260,77 @@ def day_summary_html(d: dict, pump: dict) -> str:
 &nbsp;·&nbsp; Net difference: <b>{_diff_html(t['difference'])}</b></div>
 <div class="sign"><div>Manager</div><div></div><div>Owner</div></div></div>"""
     return _page("Daily Salesman Summary", pump, body, wide=True)
+
+
+# ------------------------------------------------------------------ Owner: day closing position
+def owner_closing_html(d: dict, pump: dict) -> str:
+    fl = lambda f: _e(FUEL_LABELS.get(f, f))  # noqa: E731
+    p = d["payments"]
+
+    # 1. Sale
+    srows = "".join(f"""<tr><td>{fl(r['fuel'])}</td><td class="n">{_rs(r['rate']) if r['rate'] else '—'}</td>
+<td class="n">{_l(r['liters'])}</td><td class="n">{_l(r['testing'])}</td><td class="n">{_rs(r['amount'])}</td></tr>"""
+                    for r in d["sale"])
+    tl = q2(sum((r["liters"] for r in d["sale"]), ZERO))
+    sale_html = f"""<h2>1. Sale of the day ({d['shifts']} approved shifts)</h2>
+<table><tr><th>Fuel</th><th class="n">Avg rate</th><th class="n">Litres sold</th><th class="n">Testing (L)</th><th class="n">Amount</th></tr>
+{srows or '<tr><td colspan="5">No approved sale.</td></tr>'}
+<tr class="total"><td colspan="2">Total</td><td class="n">{_l(tl)}</td><td class="n">{_l(d['testing_total'])}</td>
+<td class="n">{_rs(p['meter_total'])}</td></tr></table>
+<table style="margin-top:6px"><tr><th>Cash</th><th>Paytm / UPI</th><th>CCMS / Card</th><th>Credit sale</th>
+<th>Cash advance to parties</th><th>Short / Excess</th></tr>
+<tr><td class="n">{_rs(p['cash_amount'])}</td><td class="n">{_rs(p['paytm_amount'])}</td><td class="n">{_rs(p['ccms_amount'])}</td>
+<td class="n">{_rs(p['credit_amount'])}</td><td class="n">{_rs(p['cash_given_to_creditor_amount'])}</td>
+<td class="n">{_diff_html(p['difference'])}</td></tr></table>"""
+
+    # 2. Stock
+    strows = "".join(f"""<tr><td>{_e(r['tank'] or '')} ({fl(r['fuel'])})</td><td class="n">{_l(r['opening'])}</td>
+<td class="n">{_l(r['inward'])}</td><td class="n">{_l(r['sale'])}</td><td class="n">{_l(r['dip_adjust'] + r['correction'])}</td>
+<td class="n"><b>{_l(r['closing'])}</b></td><td class="n">{_l(r['dip_physical']) if r['dip_physical'] is not None else '—'}</td>
+<td class="n">{_l(r['capacity'])}</td></tr>""" for r in d["stock"])
+    stock_html = f"""<h2>2. Closing stock (litres)</h2>
+<table><tr><th>Tank</th><th class="n">Opening</th><th class="n">Purchase</th><th class="n">Sale</th>
+<th class="n">Dip / correction</th><th class="n">Closing (book)</th><th class="n">Dip (physical)</th><th class="n">Capacity</th></tr>
+{strows or '<tr><td colspan="8">No tanks.</td></tr>'}</table>"""
+
+    # 3. Money
+    mrows = "".join(f"""<tr><td>{_e(r['name'])}</td><td class="n">{_rs(r['opening'])}</td>
+<td class="n">{_rs(r['closing'] - r['opening'])}</td><td class="n"><b>{_rs(r['closing'])}</b></td></tr>""" for r in d["money"])
+    money_html = f"""<h2>3. Cash, bank, Paytm, CCMS and oil company</h2>
+<table><tr><th>Account</th><th class="n">Opening</th><th class="n">Net change today</th><th class="n">Closing</th></tr>{mrows}</table>
+<p style="color:#555">Paytm / CCMS = amount not yet settled. Oil company = amount payable by the pump.</p>"""
+
+    # 4. Credit parties
+    prow = "".join(f"""<tr><td>{_e(r['party'])}{' ⚠️' if r['over'] else ''}</td><td>{_e(r['phone'])}</td>
+<td class="n">{_rs(r['opening'])}</td><td class="n">{_rs(r['given']) if r['given'] else '—'}</td>
+<td class="n">{_rs(r['received']) if r['received'] else '—'}</td><td class="n"><b>{_rs(r['closing'])}</b></td>
+<td class="n">{_rs(r['limit']) if r['limit'] > 0 else '—'}</td></tr>""" for r in d["parties"])
+    party_html = f"""<h2>4. Credit parties — balance receivable</h2>
+<table><tr><th>Party</th><th>Mobile</th><th class="n">Opening</th><th class="n">Credit today</th>
+<th class="n">Received today</th><th class="n">Closing</th><th class="n">Limit</th></tr>
+{prow or '<tr><td colspan="7">No balances.</td></tr>'}
+<tr class="total"><td colspan="3">Total ({len(d['parties'])} parties)</td><td class="n">{_rs(d['credit_given'])}</td>
+<td class="n">{_rs(d['credit_received'])}</td><td class="n">{_rs(d['party_total'])}</td><td></td></tr></table>"""
+
+    # 5. Expenses
+    erows = "".join(f"""<tr><td>{_e(e['category'])}</td><td>{_e(e['description'])}</td><td>{_e(e['mode'])}</td>
+<td class="n">{_rs(e['amount'])}</td></tr>""" for e in d["expenses"])
+    exp_html = f"""<h2>5. Expenses of the day</h2>
+<table><tr><th>Category</th><th>Description</th><th>Paid by</th><th class="n">Amount</th></tr>
+{erows or '<tr><td colspan="4">No expenses.</td></tr>'}
+<tr class="total"><td colspan="3">Total</td><td class="n">{_rs(d['expense_total'])}</td></tr></table>"""
+
+    alerts = d.get("alerts") or []
+    alert_html = ('<div class="warn"><b>Needs attention:</b><br>' + "<br>".join("• " + _e(a) for a in alerts) + "</div>"
+                  if alerts else '<p class="ok">✔ Nothing pending for this date.</p>')
+
+    cash = next((r["closing"] for r in d["money"] if r["account"] == "cash"), ZERO)
+    bank = q2(sum((r["closing"] for r in d["money"] if r["account"] == "bank"), ZERO))
+    body = f"""
+<div class="meta"><div><span>Date:</span> <b>{_date(d['date'])}</b></div><div></div><div></div></div>
+<div class="box">Total sale: <b>{_rs(p['meter_total'])}</b> &nbsp;·&nbsp; Cash in hand: <b>{_rs(cash)}</b>
+&nbsp;·&nbsp; All banks: <b>{_rs(bank)}</b> &nbsp;·&nbsp; Credit receivable: <b>{_rs(d['party_total'])}</b></div>
+{alert_html}
+{sale_html}{stock_html}{money_html}{party_html}{exp_html}
+<div class="end"><div class="sign"><div>Manager</div><div></div><div>Owner</div></div></div>"""
+    return _page("Day Closing Report", pump, body, wide=True)

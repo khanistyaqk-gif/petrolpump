@@ -4,7 +4,7 @@ Money Control (LOGIC.md 10). Saari aawak/jaawak money_txns mein; balance = sum(a
 - 'oil' account = oil company ko kitna dena hai (+ bill, − payment/CCMS adjust).
 """
 from core.calc import ZERO, D, q2, to_json
-from core.db import AppError, audit, db, rows, today_ist
+from core.db import AppError, audit, db, fetch_all, rows, today_ist
 
 ACCOUNTS = ["cash", "bank", "paytm", "ccms", "oil"]
 ACCOUNT_LABELS = {"cash": "Cash in hand", "bank": "Bank", "paytm": "Paytm / UPI", "ccms": "CCMS / Card",
@@ -18,16 +18,18 @@ KIND_LABELS = {
 
 
 def txns(from_date=None, to_date=None, account=None, kind=None):
-    q = db().table("money_txns").select("*")
-    if kind:
-        q = q.eq("kind", kind)
-    if from_date:
-        q = q.gte("date", from_date)
-    if to_date:
-        q = q.lte("date", to_date)
-    if account:
-        q = q.eq("account", account)
-    return rows(q.order("date").order("id").execute())
+    def make():
+        q = db().table("money_txns").select("*")
+        if kind:
+            q = q.eq("kind", kind)
+        if from_date:
+            q = q.gte("date", from_date)
+        if to_date:
+            q = q.lte("date", to_date)
+        if account:
+            q = q.eq("account", account)
+        return q.order("date").order("id")
+    return fetch_all(make)
 
 
 def _key(t):

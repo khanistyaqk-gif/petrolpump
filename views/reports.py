@@ -65,10 +65,66 @@ def print_tab():
             settlement_download(s["id"], key=f"st_{s['id']}", label="🖨️ Report")
 
 
+def closing_tab():
+    """Owner: din ke ant ki poori position."""
+    d = st.date_input("Date", value=date.fromisoformat(today_ist()), key="cl_d").isoformat()
+    data = reports.owner_closing_data(d)
+    st.download_button("🖨️ Print day closing report",
+                       printout.owner_closing_html(data, reports.pump_info()).encode("utf-8"),
+                       file_name=f"day_closing_{d}.html", mime="text/html", type="primary",
+                       key=f"cl_{d}", use_container_width=True)
+    p = data["payments"]
+    cash = next((r["closing"] for r in data["money"] if r["account"] == "cash"), ZERO)
+    bank = sum((r["closing"] for r in data["money"] if r["account"] == "bank"), ZERO)
+    c = st.columns(4)
+    c[0].metric("Total sale", rs(p["meter_total"]))
+    c[1].metric("Cash in hand", rs(cash))
+    c[2].metric("All banks", rs(bank))
+    c[3].metric("Credit receivable", rs(data["party_total"]))
+    for a in data["alerts"]:
+        st.warning(a)
+
+    st.subheader("Sale")
+    if data["sale"]:
+        st.dataframe(pd.DataFrame([{"Fuel": fuel(r["fuel"]), "Avg rate": rs(r["rate"]) if r["rate"] else "—",
+                                    "Litres": lt(r["liters"]), "Testing": lt(r["testing"]), "Amount": rs(r["amount"])}
+                                   for r in data["sale"]]), hide_index=True, use_container_width=True)
+    else:
+        st.info("No approved sale for this date.")
+    st.subheader("Closing stock")
+    st.dataframe(pd.DataFrame([{"Tank": f"{r['tank'] or ''} ({fuel(r['fuel'])})", "Opening": lt(r["opening"]),
+                                "Purchase": lt(r["inward"]), "Sale": lt(r["sale"]),
+                                "Dip / correction": lt(r["dip_adjust"] + r["correction"]), "Closing": lt(r["closing"]),
+                                "Dip (physical)": lt(r["dip_physical"]) if r["dip_physical"] is not None else "—"}
+                               for r in data["stock"]]), hide_index=True, use_container_width=True)
+    st.subheader("Cash, bank, Paytm, CCMS, oil company")
+    st.dataframe(pd.DataFrame([{"Account": r["name"], "Opening": rs(r["opening"]),
+                                "Change": rs(r["closing"] - r["opening"]), "Closing": rs(r["closing"])}
+                               for r in data["money"]]), hide_index=True, use_container_width=True)
+    st.subheader(f"Credit parties · total {rs(data['party_total'])}")
+    if data["parties"]:
+        st.dataframe(pd.DataFrame([{"Party": r["party"] + (" ⚠️" if r["over"] else ""), "Opening": rs(r["opening"]),
+                                    "Credit today": rs(r["given"]), "Received today": rs(r["received"]),
+                                    "Closing": rs(r["closing"])} for r in data["parties"]]),
+                     hide_index=True, use_container_width=True)
+    if data["expenses"]:
+        st.subheader(f"Expenses · {rs(data['expense_total'])}")
+        st.dataframe(pd.DataFrame([{"Category": e["category"], "Description": e["description"],
+                                    "Paid by": e["mode"], "Amount": rs(e["amount"])} for e in data["expenses"]]),
+                     hide_index=True, use_container_width=True)
+
+
 def page():
-    auth.require(*MGR)
+    me = auth.require(*MGR)
     st.header("📊 Reports")
-    tabs = st.tabs(["🖨️ Print", "Daily summary", "Period sales", "Salesman", "Profit / Loss", "Party statement"])
+    names = ["🖨️ Print", "Daily summary", "Period sales", "Salesman", "Profit / Loss", "Party statement"]
+    if me["role"] == "owner":
+        names = ["📋 Day closing"] + names
+    tabs = st.tabs(names)
+    if me["role"] == "owner":
+        with tabs[0]:
+            closing_tab()
+        tabs = tabs[1:]
 
     with tabs[0]:
         print_tab()

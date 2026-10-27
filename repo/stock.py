@@ -5,7 +5,7 @@ Stock (LOGIC.md 9):
 - Stock register: stock_moves se — har din opening / inward / sale / adjust / closing.
 """
 from core.calc import ZERO, D, q2, to_json
-from core.db import FUEL_TYPES, AppError, audit, db, now_ist, one, rows, today_ist
+from core.db import FUEL_TYPES, AppError, audit, db, fetch_all, now_ist, one, rows, today_ist
 from repo import tanks
 
 
@@ -96,14 +96,16 @@ def approve_dip(dip_id, by):
 
 # ---------------- Register ----------------
 def moves(fuel_type=None, from_date=None, to_date=None):
-    q = db().table("stock_moves").select("*")
-    if fuel_type:
-        q = q.eq("fuel_type", fuel_type)
-    if from_date:
-        q = q.gte("date", from_date)
-    if to_date:
-        q = q.lte("date", to_date)
-    return rows(q.order("date").order("id").execute())
+    def make():
+        q = db().table("stock_moves").select("*")
+        if fuel_type:
+            q = q.eq("fuel_type", fuel_type)
+        if from_date:
+            q = q.gte("date", from_date)
+        if to_date:
+            q = q.lte("date", to_date)
+        return q.order("date").order("id")
+    return fetch_all(make)
 
 
 def register(fuel_type, from_date, to_date):
@@ -121,8 +123,8 @@ def _prev(d):
 def last_purchase_rates(as_of=None):
     """Har fuel ka aakhri approved tanker rate (bill / litre) — P&L ke liye."""
     out = {}
-    for r in rows(db().table("fuel_inward").select("*").eq("status", "approved")
-                  .lte("date", as_of or today_ist()).order("date").order("id").execute()):
+    for r in fetch_all(lambda: db().table("fuel_inward").select("*").eq("status", "approved")
+                       .lte("date", as_of or today_ist()).order("date").order("id")):
         out[r["fuel_type"]] = (D(r["amount"]) / D(r["liters"]))
     return out
 

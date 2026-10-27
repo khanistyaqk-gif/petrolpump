@@ -1,14 +1,14 @@
 """
 Reports. Sale hamesha approved settlement ke SAVED snapshot se (T3: baad ka rate badlav purana amount nahi badalta).
 """
-from core.calc import ZERO, D, cost_of_sales, profit_loss, q2
-from core.db import db, one, rows
+from core.calc import ZERO, D, cost_of_sales, profit_loss, q2, short_excess_label
+from core.db import db, fetch_all, one, rows
 from repo import money, stock
 
 
 def approved_settlements(from_date, to_date):
-    return rows(db().table("settlements").select("*, profiles:salesman_id(name)").eq("status", "approved")
-                .gte("date", from_date).lte("date", to_date).order("date").order("id").execute())
+    return fetch_all(lambda: db().table("settlements").select("*, profiles:salesman_id(name)").eq("status", "approved")
+                     .gte("date", from_date).lte("date", to_date).order("date").order("id"))
 
 
 def fuel_lines(settlements):
@@ -78,8 +78,8 @@ def pnl(from_date, to_date):
     fuel = sales_by_fuel(sett)
     sales_amt = q2(sum((v["amount"] for v in fuel.values()), ZERO))
     cost, missing = cost_of_sales({ft: v["liters"] for ft, v in fuel.items()}, stock.last_purchase_rates(to_date))
-    exp = rows(db().table("expenses").select("amount, category").eq("status", "approved")
-               .gte("date", from_date).lte("date", to_date).execute())
+    exp = fetch_all(lambda: db().table("expenses").select("id, amount, category").eq("status", "approved")
+                    .gte("date", from_date).lte("date", to_date).order("id"))
     exp_total = q2(sum((D(e["amount"]) for e in exp), ZERO))
     by_cat = {}
     for e in exp:
@@ -98,8 +98,8 @@ def consistency_check():
             problems.append(f"{tk['fuel_type']} tank: stock {q2(tk['current_stock'])} L, register {total} L")
     from core.calc import CREDIT_SIGN
     for p in rows(db().table("credit_parties").select("*").execute()):
-        tx = rows(db().table("credit_transactions").select("type, amount").eq("party_id", p["id"])
-                  .eq("status", "approved").execute())
+        tx = fetch_all(lambda: db().table("credit_transactions").select("type, amount, id").eq("party_id", p["id"])
+                       .eq("status", "approved").order("id"))
         total = q2(sum((D(t["amount"]) * CREDIT_SIGN.get(t["type"], 0) for t in tx), ZERO))
         if total != q2(p["current_balance"]):
             problems.append(f"Party {p['name']}: balance {q2(p['current_balance'])}, khata {total}")
@@ -222,3 +222,131 @@ def day_summary_data(on_date):
     return {"date": on_date, "rows": out, "total": total, "pending": pending, "fuels": fuels,
             "credit": credit_list, "credit_by_party": sorted(by_party.values(), key=lambda x: x["party"]),
             "received": received, "received_by_mode": by_mode, "inflow": inflow}
+
+
+# ------------------------------------------------------------------ Owner: din ki closing position
+def _prev_day(d):
+    from datetime import date, timedelta
+    return (date.fromisoformat(d) - timedelta(days=1)).isoformat()
+
+
+def owner_closing_data(on_date):
+    """Din ke ant ki poori position: sale, stock, cash/bank/Paytm/CCMS, oil company, credit parties, alerts."""
+    from core.calc import CREDIT_SIGN
+    from core.db import FUEL_LABELS, FUEL_TYPES
+    from repo import accounts, rates
+
+    prev = _prev_day(on_date)
+    day = day_summary_data(on_date)
+    sett = approved_settlements(on_date, on_date)
+    fuel = sales_by_fuel(sett)
+    pay = payment_totals(sett)
+    rate_today = rates.current_rates(on_date)
+
+    # Sale (fuel-wise)
+    # Rate = saved sale amount / litres (din mein rate badla ho to bhi sahi average)
+    sale_rows = [{"fuel": ft, "rate": q2(v["amount"] / v["liters"]) if v["liters"] else rate_today.get(ft),
+                  "liters": v["liters"], "testing": v["testing"],
+                  "amount": v["amount"]} for ft, v in fuel.items()]
+    sale_rows.sort(key=lambda r: FUEL_TYPES.index(r["fuel"]) if r["fuel"] in FUEL_TYPES else 99)
+
+    # Stock: ek hi baar saari moves (tarikh tak)
+    tanks_ = rows(db().table("stock_tanks").select("*").eq("is_active", True).execute())
+    mv = stock.moves(to_date=on_date)
+    dips = rows(db().table("stock_dips").select("*").eq("status", "approved").eq("date", on_date).order("id").execute())
+    stock_rows = []
+    for t in tanks_:
+        ft = t["fuel_type"]
+        mine = [m for m in mv if m["fuel_type"] == ft]
+        closing = q2(sum((D(m["delta"]) for m in mine), ZERO))
+        today = [m for m in mine if str(m["date"]) == on_date]
+        k = lambda kind: q2(sum((D(m["delta"]) for m in today if m["kind"] == kind), ZERO))  # noqa: E731
+        # naya tank aaj bana ho to uska shuru ka stock "opening" mein dikhao, correction mein nahi
+        opening = q2(closing - sum((D(m["delta"]) for m in today if m["kind"] != "opening"), ZERO))
+        dip = next((x for x in reversed(dips) if x["fuel_type"] == ft), None)
+        cap = D(t.get("capacity_liters"))
+        stock_rows.append({"fuel": ft, "tank": t.get("tank_name"), "opening": opening, "inward": k("inward"),
+                           "sale": -k("sale"), "dip_adjust": k("dip_adjust"), "correction": k("correction"),
+                           "closing": closing, "capacity": cap,
+                           "dip_physical": D(dip["physical_liters"]) if dip else None,
+                           "low": cap > 0 and closing < cap * D("0.10")})
+
+    # Paisa: kal ka closing = aaj ka opening
+    banks, oils = accounts.name_maps()
+    b_open, b_close = money.balances(prev), money.balances(on_date)
+    keys = sorted(set(b_open) | set(b_close),
+                  key=lambda k: (money.ACCOUNTS.index(k[0]), str(k[1] or "")))
+    money_rows = []
+    for k in keys:
+        acc, ref = k
+        name = money.ACCOUNT_LABELS[acc]
+        if acc == "bank":
+            name = f"Bank · {banks.get(ref, '?')}"
+        elif acc == "oil":
+            name = f"Payable to {oils.get(ref, '?')}"
+        money_rows.append({"account": acc, "name": name, "opening": b_open.get(k, ZERO), "closing": b_close.get(k, ZERO)})
+    for acc in ("cash", "paytm", "ccms"):
+        if not any(r["account"] == acc for r in money_rows):
+            money_rows.insert(0, {"account": acc, "name": money.ACCOUNT_LABELS[acc], "opening": ZERO, "closing": ZERO})
+    money_rows.sort(key=lambda r: (money.ACCOUNTS.index(r["account"]), r["name"]))
+
+    # Credit parties: tarikh tak approved entries se balance
+    parties = rows(db().table("credit_parties").select("*").order("name").execute())
+    tx = fetch_all(lambda: db().table("credit_transactions").select("id, party_id, date, type, amount")
+                   .eq("status", "approved").lte("date", on_date).order("id"))
+    party_rows = []
+    for p in parties:
+        mine = [t for t in tx if t["party_id"] == p["id"]]
+        closing = q2(sum((D(t["amount"]) * CREDIT_SIGN.get(t["type"], 0) for t in mine), ZERO))
+        today = [t for t in mine if str(t["date"]) == on_date]
+        given = q2(sum((D(t["amount"]) for t in today if t["type"] in ("sale", "cash_given")), ZERO))
+        received = q2(sum((D(t["amount"]) for t in today if t["type"] == "payment_received"), ZERO))
+        opening = q2(closing - given + received)
+        lim = D(p.get("credit_limit"))
+        if closing == 0 and given == 0 and received == 0:
+            continue
+        party_rows.append({"party": p["name"], "phone": p.get("phone") or "", "opening": opening, "given": given,
+                           "received": received, "closing": closing, "limit": lim,
+                           "over": lim > 0 and closing > lim})
+
+    # Kharcha
+    exp = rows(db().table("expenses").select("*").eq("status", "approved").eq("date", on_date).order("id").execute())
+    exp_rows = [{"category": e["category"], "description": e.get("description") or "",
+                 "mode": "Cash" if e["payment_mode"] == "cash" else f"Bank · {banks.get(e.get('bank_account_id'), '')}",
+                 "amount": q2(e["amount"])} for e in exp]
+
+    # Dhyan dene wali baatein
+    alerts = []
+    if day["pending"]:
+        alerts.append("Settlements not yet approved (not counted in sale): "
+                      + ", ".join(f"{p['salesman']}" for p in day["pending"]))
+    live = rows(db().table("shifts").select("id").eq("is_active", True).execute())
+    if live:
+        alerts.append(f"{len(live)} shift(s) still running.")
+    for tbl, label in (("fuel_inward", "fuel purchase(s)"), ("stock_dips", "dip entr(ies)"), ("expenses", "expense(s)")):
+        n = len(rows(db().table(tbl).select("id").eq("status", "pending").execute()))
+        if n:
+            alerts.append(f"{n} {label} waiting for approval.")
+    if q2(pay["difference"]) != 0:
+        alerts.append(f"Salesman short / excess for the day: {short_excess_label(pay['difference'])}.")
+    for r in party_rows:
+        if r["over"]:
+            alerts.append(f"{r['party']} is over the credit limit (₹{r['closing']} against limit ₹{q2(r['limit'])}).")
+    for r in stock_rows:
+        if r["low"]:
+            alerts.append(f"{r['tank'] or FUEL_LABELS.get(r['fuel'])}: stock below 10% of capacity.")
+        if r["closing"] < 0:
+            alerts.append(f"{r['tank'] or FUEL_LABELS.get(r['fuel'])}: stock is negative — check purchases / dip.")
+    if not dips:
+        alerts.append("No dip reading approved for this date (physical stock not verified).")
+    for ft in fuel:
+        if not rate_today.get(ft):
+            alerts.append(f"No fuel rate set for {FUEL_LABELS.get(ft, ft)}.")
+
+    return {"date": on_date, "sale": sale_rows, "payments": pay, "testing_total": q2(sum((r["testing"] for r in sale_rows), ZERO)),
+            "shifts": len(sett), "stock": stock_rows, "money": money_rows, "parties": party_rows,
+            "party_total": q2(sum((r["closing"] for r in party_rows), ZERO)),
+            "credit_given": q2(sum((r["given"] for r in party_rows), ZERO)),
+            "credit_received": q2(sum((r["received"] for r in party_rows), ZERO)),
+            "expenses": exp_rows, "expense_total": q2(sum((e["amount"] for e in exp_rows), ZERO)),
+            "inflow": day["inflow"], "alerts": alerts}

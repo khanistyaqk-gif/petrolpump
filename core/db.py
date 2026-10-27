@@ -79,6 +79,17 @@ def rows(result):
     return getattr(result, "data", None) or []
 
 
+def fetch_all(make, page=1000):
+    """Supabase ek baar mein max 1000 rows deta hai. make() = naya query (order ke saath); sab pages laao."""
+    out, start = [], 0
+    while True:
+        chunk = rows(make().range(start, start + page - 1).execute())
+        out.extend(chunk)
+        if len(chunk) < page:
+            return out
+        start += page
+
+
 def audit(action: str, user_id=None, details: dict | None = None):
     """Zaroori badlavon ka log. Fail ho to kaam nahi rukta."""
     try:

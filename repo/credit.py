@@ -3,7 +3,7 @@ Credit party (udhaar) — LOGIC.md 8.
 Balance SIRF approve par badalta hai (database function approve_settlement_v2 mein).
 """
 from core.calc import ZERO, D, q2, to_json
-from core.db import AppError, audit, db, now_ist, one, rows, today_ist
+from core.db import AppError, audit, db, fetch_all, now_ist, one, rows, today_ist
 
 OPEN = ("pending", "hold", "reopened")
 
@@ -107,8 +107,8 @@ def set_opening(party_id, amount, on_date, by):
 def statement(party_id, from_date, to_date):
     """Opening (from_date se pehle tak), har approved entry, closing."""
     from core.calc import party_statement
-    data = rows(db().table("credit_transactions").select("*").eq("party_id", party_id)
-                .eq("status", "approved").lte("date", to_date).order("date").order("id").execute())
+    data = fetch_all(lambda: db().table("credit_transactions").select("*").eq("party_id", party_id)
+                     .eq("status", "approved").lte("date", to_date).order("date").order("id"))
     return party_statement(data, from_date)
 
 
