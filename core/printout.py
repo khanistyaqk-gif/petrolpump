@@ -186,6 +186,28 @@ def day_summary_html(d: dict, pump: dict) -> str:
         pend_html = '<div class="warn">⚠️ Abhi approve nahi hue (is summary mein nahi jode): ' + ", ".join(
             f"{_e(p['salesman'])} ({_e(p['status'])})" for p in pending) + "</div>"
 
+    credit_html = ""
+    cl = d.get("credit") or []
+    if cl:
+        f_t = q2(sum((c["fuel"] for c in cl), ZERO))
+        c_t = q2(sum((c["cash"] for c in cl), ZERO))
+        lines = "".join(f"""<tr><td>{_e(c['party'])}</td><td>{_e(c['salesman'])}</td><td>{_e(c['note'])}</td>
+<td class="n">{_rs(c['fuel']) if c['fuel'] else '—'}</td><td class="n">{_rs(c['cash']) if c['cash'] else '—'}</td>
+<td class="n">{_rs(c['fuel'] + c['cash'])}</td></tr>""" for c in cl)
+        parties = d.get("credit_by_party") or []
+        party_rows = "".join(f"""<tr><td>{_e(p['party'])}</td><td class="n">{_rs(p['fuel'])}</td>
+<td class="n">{_rs(p['cash'])}</td><td class="n">{_rs(p['fuel'] + p['cash'])}</td></tr>""" for p in parties)
+        credit_html = f"""
+<h2>Creditor list (aaj ka udhaar)</h2>
+<table><tr><th>Party</th><th>Salesman</th><th>Gaadi / slip</th><th class="n">Fuel udhaar</th>
+<th class="n">Cash diya</th><th class="n">Kul</th></tr>{lines}
+<tr class="total"><td colspan="3">Kul ({len(cl)})</td><td class="n">{_rs(f_t)}</td><td class="n">{_rs(c_t)}</td>
+<td class="n">{_rs(f_t + c_t)}</td></tr></table>
+<h2>Party-wise jod</h2>
+<table><tr><th>Party</th><th class="n">Fuel udhaar</th><th class="n">Cash diya</th><th class="n">Kul</th></tr>{party_rows}</table>"""
+    else:
+        credit_html = "<h2>Creditor list (aaj ka udhaar)</h2><p>Aaj koi udhaar nahi.</p>"
+
     body = f"""
 <div class="meta"><div><span>Tarikh:</span> <b>{_date(d['date'])}</b></div>
 <div><span>Approved duty:</span> <b>{len(d['rows'])}</b></div><div></div></div>
@@ -194,6 +216,7 @@ def day_summary_html(d: dict, pump: dict) -> str:
 <th class="n">CCMS</th><th class="n">Credit</th><th class="n">Creditor ko cash</th><th class="n">Cash jama</th>
 <th class="n">Short / Excess</th></tr>{''.join(body_rows)}</table>
 {pend_html}
+{credit_html}
 <div class="box">Din ki kul sale: <b>{_rs(t['sale'])}</b> &nbsp;·&nbsp; Manager ke paas cash: <b>{_rs(t['cash_jama'])}</b>
 &nbsp;·&nbsp; Kul farak: <b>{_diff_html(t['difference'])}</b></div>
 <div class="sign"><div>Manager</div><div></div><div>Owner</div></div>"""
