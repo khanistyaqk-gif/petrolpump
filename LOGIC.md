@@ -55,6 +55,11 @@ Status:
 - 📦 Har entry: nozzle + litre (0 se zyada). Rate apne aap lock, amount = litre × rate (2 decimal).
 - 📦 Entry ka status: pending → approved (settlement approve hone par). Rejected/cancelled entry kisi total mein nahi judti.
 
+- ✅ **Ek nozzle, ek entry:** ek duty mein har nozzle ki ek hi entry. Entry ke baad nozzle 🔒 lock.
+  Badlav: **✏️ Edit** (litre badlo — rate wahi jo entry ke waqt laga) ya **❌ Cancel** (nozzle phir khul jata hai).
+  Hisaab bhejne ke baad Edit/Cancel band — Manager reopen kare tabhi. Database bhi duplicate rokta hai.
+  Har Edit/Cancel audit log mein.
+
 ## 5. Salesman — Payment Breakup (duty end)
 
 - 📦 Salesman batata hai: **Cash + Paytm (UPI) + CCMS (card) + Credit**.
