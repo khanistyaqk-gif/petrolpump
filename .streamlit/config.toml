@@ -1,2 +1,12 @@
-   [theme]
-   primaryColor = "#0f766e"
+[theme]
+primaryColor = "#0f766e"
+
+[server]
+enableXsrfProtection = true
+maxUploadSize = 20
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
