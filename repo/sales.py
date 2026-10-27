@@ -5,7 +5,7 @@ Salesman ki sale entry (LOGIC.md 4).
 - Hisaab jama (breakup submit) hone ke baad entry nahi jud/kat sakti — jab tak Manager reopen na kare.
 """
 from core.calc import ZERO, CalcError, D, q2, sale_amount, to_json
-from core.db import AppError, db, now_ist, one, rows, today_ist
+from core.db import AppError, audit, db, now_ist, one, rows, today_ist
 from repo import duties, rates
 
 LIVE = lambda r: (r.get("status") or "pending") not in ("rejected", "cancelled")  # noqa: E731
@@ -49,6 +49,9 @@ def add_entry(salesman_id, nozzle_id, liters):
     assignment = next((a for a in duty_nozzles(duty["id"], salesman_id) if a["nozzle_id"] == nozzle_id), None)
     if not assignment:
         raise AppError("Ye nozzle aapki duty mein nahi hai.")
+    if any(e["nozzle_id"] == nozzle_id for e in live_entries(duty["id"], salesman_id)):
+        name = (assignment.get("nozzles") or {}).get("nozzle_name") or "Is nozzle"
+        raise AppError(f"{name} ki entry ho chuki hai. Badalna ho to us entry par Edit ya Cancel dabayein.")
     fuel = (assignment.get("nozzles") or {}).get("fuel_type")
     shift_date = duty.get("date") or today_ist()
     rate_row = rates.rate_row_for(fuel, shift_date)
@@ -60,6 +63,16 @@ def add_entry(salesman_id, nozzle_id, liters):
     except CalcError as exc:
         raise AppError(str(exc))
 
+    try:
+        _insert_entry(duty, nozzle_id, salesman_id, shift_date, fuel, liters, rate, rate_row, amount)
+    except Exception as exc:
+        if "uniq_live_sale_per_nozzle" in str(exc) or "duplicate" in str(exc).lower():
+            raise AppError("Is nozzle ki entry ho chuki hai.")
+        raise
+    return amount
+
+
+def _insert_entry(duty, nozzle_id, salesman_id, shift_date, fuel, liters, rate, rate_row, amount):
     db().table("sale_entries").insert({
         "shift_id": duty["id"], "nozzle_id": nozzle_id, "salesman_id": salesman_id,
         "date": shift_date, "entry_time": now_ist(), "fuel_type": fuel,
@@ -68,16 +81,34 @@ def add_entry(salesman_id, nozzle_id, liters):
                           "rate_id": rate_row.get("id"), "source": "fuel_rates"},
         "amount": to_json(amount), "status": "pending", "created_at": now_ist(),
     }).execute()
-    return amount
 
 
-def cancel_entry(entry_id, salesman_id):
+def _own_pending(entry_id, salesman_id):
     e = one(db().table("sale_entries").select("*").eq("id", entry_id).limit(1).execute())
     if not e or e.get("salesman_id") != salesman_id or not LIVE(e):
         raise AppError("Entry nahi mili.")
     if (e.get("status") or "pending") != "pending" or not _editable(e["shift_id"]):
-        raise AppError("Ye entry ab nahi kat sakti.")
+        raise AppError("Hisaab jama ho chuka hai. Badlav ke liye Manager se reopen karwayein.")
+    return e
+
+
+def edit_entry(entry_id, salesman_id, liters):
+    """Litre badlo. Rate wahi rahega jo entry ke waqt laga tha."""
+    e = _own_pending(entry_id, salesman_id)
+    try:
+        amount = sale_amount(liters, e["rate"])
+    except CalcError as exc:
+        raise AppError(str(exc))
+    db().table("sale_entries").update({"liters": to_json(liters), "amount": to_json(amount)}) \
+        .eq("id", entry_id).eq("status", "pending").execute()
+    audit("sale_edited", salesman_id, {"entry": entry_id, "old_liters": e.get("liters"), "new_liters": str(q2(liters))})
+    return amount
+
+
+def cancel_entry(entry_id, salesman_id):
+    e = _own_pending(entry_id, salesman_id)
     db().table("sale_entries").update({"status": "cancelled"}).eq("id", entry_id).execute()
+    audit("sale_cancelled", salesman_id, {"entry": entry_id, "liters": e.get("liters")})
 
 
 def history(salesman_id, limit=200):
