@@ -7,6 +7,7 @@ import streamlit as st
 from core import auth
 from core.calc import ZERO, short_excess_label
 from core.db import today_ist
+from core import printout
 from core.ui import fuel, lt, rs
 from repo import accounts, credit, money, reports
 
@@ -27,10 +28,51 @@ def _table(df: pd.DataFrame, name: str):
                        mime="text/csv", key=f"dl_{name}")
 
 
+def settlement_download(settlement_id, key, label="🖨️ Settlement report"):
+    d = reports.settlement_print_data(settlement_id)
+    if not d:
+        st.error("Hisaab nahi mila.")
+        return
+    html = printout.settlement_html(d, reports.pump_info())
+    st.download_button(label, html.encode("utf-8"), mime="text/html", key=key, use_container_width=True,
+                       file_name=f"settlement_{d['salesman']}_{d['settlement']['date']}_{settlement_id}.html")
+
+
+def print_tab():
+    st.caption("File download hogi → browser mein kholo → upar **🖨️ Print** dabao (ya Save as PDF).")
+    d = st.date_input("Tarikh (duty ki)", value=date.fromisoformat(today_ist()), key="pr_d").isoformat()
+    data = reports.day_summary_data(d)
+
+    st.subheader("Din ka salesman-wise summary")
+    if data["rows"]:
+        st.download_button("🖨️ Din ka summary", printout.day_summary_html(data, reports.pump_info()).encode("utf-8"),
+                           file_name=f"salesman_summary_{d}.html", mime="text/html", type="primary",
+                           key=f"day_{d}", use_container_width=True)
+        t = data["total"]
+        st.write(f"{len(data['rows'])} duty · Sale **{rs(t['sale'])}** · Cash jama **{rs(t['cash_jama'])}** · "
+                 f"{short_excess_label(t['difference'])}")
+    else:
+        st.info("Is tarikh ki koi approved duty nahi.")
+    if data["pending"]:
+        st.warning("Approve baaki (summary mein nahi): " + ", ".join(p["salesman"] for p in data["pending"]))
+
+    st.subheader("Har salesman ka settlement")
+    for s in reports.approved_settlements(d, d):
+        c1, c2 = st.columns([3, 2])
+        c1.write(f"**{(s.get('profiles') or {}).get('name')}** · {rs(s['meter_total'])} · "
+                 f"{short_excess_label(s['difference'])}")
+        with c2:
+            settlement_download(s["id"], key=f"st_{s['id']}", label="🖨️ Report")
+
+
 def page():
     auth.require(*MGR)
     st.header("📊 Reports")
-    tabs = st.tabs(["Din ka hisaab", "Period sale", "Salesman", "Profit / Loss", "Party statement"])
+    tabs = st.tabs(["🖨️ Print", "Din ka hisaab", "Period sale", "Salesman", "Profit / Loss", "Party statement"])
+
+    with tabs[0]:
+        print_tab()
+    tabs = tabs[1:]
 
     with tabs[0]:
         d = st.date_input("Tarikh", value=date.fromisoformat(today_ist()), key="ds_d").isoformat()
