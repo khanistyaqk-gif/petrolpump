@@ -2,7 +2,7 @@
 Reports. Sale hamesha approved settlement ke SAVED snapshot se (T3: baad ka rate badlav purana amount nahi badalta).
 """
 from core.calc import ZERO, D, cost_of_sales, profit_loss, q2
-from core.db import db, rows
+from core.db import db, one, rows
 from repo import money, stock
 
 
@@ -128,3 +128,54 @@ def backup():
             start += 1000
         out[t] = data
     return out
+
+
+# ---------------- Print reports ----------------
+def pump_info():
+    from core.db import setting
+    return {"name": setting("PUMP_NAME", "Petrol Pump"), "address": setting("PUMP_ADDRESS", "")}
+
+
+def settlement_print_data(settlement_id):
+    s = one(db().table("settlements").select("*").eq("id", settlement_id).limit(1).execute())
+    if not s:
+        return None
+    names = {p["id"]: p["name"] for p in rows(db().table("profiles").select("id, name").execute())}
+    shift = one(db().table("shifts").select("started_at, ended_at").eq("id", s["shift_id"]).limit(1).execute()) or {}
+    tx = rows(db().table("credit_transactions").select("*, credit_parties:party_id(name)")
+              .eq("reference_id", str(s["id"])).in_("type", ["sale", "cash_given"])
+              .in_("status", ["approved", "pending", "hold"]).order("id").execute())
+    credit = [{"party": (t.get("credit_parties") or {}).get("name"), "type": t["type"], "amount": D(t["amount"]),
+               "note": t.get("note")} for t in tx]
+    return {"settlement": s, "salesman": names.get(s["salesman_id"], "—"), "approver": names.get(s.get("approved_by")),
+            "started_at": shift.get("started_at"), "credit": credit}
+
+
+def day_summary_data(on_date):
+    from core.db import FUEL_TYPES
+    all_s = rows(db().table("settlements").select("*").eq("date", on_date).order("id").execute())
+    names = {p["id"]: p["name"] for p in rows(db().table("profiles").select("id, name").execute())}
+    keys = ("sale", "cash", "paytm", "ccms", "credit", "cash_given", "cash_jama", "difference")
+    total = {k: ZERO for k in keys} | {"liters": {}}
+    out, pending, used_fuels = [], [], set()
+    for s in all_s:
+        if s.get("status") != "approved":
+            pending.append({"salesman": names.get(s["salesman_id"], "—"), "status": s.get("status")})
+            continue
+        liters = {}
+        for r in s.get("nozzle_readings") or []:
+            ft = r.get("fuel_type")
+            liters[ft] = q2(liters.get(ft, ZERO) + D(r.get("net_sale_liters")))
+            used_fuels.add(ft)
+        row = {"salesman": names.get(s["salesman_id"], "—"), "liters": liters,
+               "sale": q2(s["meter_total"]), "cash": q2(s["cash_amount"]), "paytm": q2(s["paytm_amount"]),
+               "ccms": q2(s["ccms_amount"]), "credit": q2(s["credit_amount"]),
+               "cash_given": q2(s["cash_given_to_creditor_amount"]), "cash_jama": q2(s["cash_transfer_expected"]),
+               "difference": q2(s["difference"])}
+        out.append(row)
+        for k in keys:
+            total[k] = q2(total[k] + row[k])
+        for ft, v in liters.items():
+            total["liters"][ft] = q2(total["liters"].get(ft, ZERO) + v)
+    fuels = [f for f in FUEL_TYPES if f in used_fuels]
+    return {"date": on_date, "rows": out, "total": total, "pending": pending, "fuels": fuels}
