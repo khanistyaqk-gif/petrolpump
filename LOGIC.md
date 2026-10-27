@@ -173,6 +173,7 @@ Status:
   Approve hote hi Settlement page par print button; purane report Reports → 🖨️ Print.
 - ✅ **Din ka salesman-wise summary** (A4 landscape): har salesman ki fuel-wise litre, sale, cash, paytm, ccms,
   credit, creditor ko cash, cash jama, short/excess + kul. Sirf approved duty judti hai; pending ka naam alag likha aata hai.
+  Saath mein **Creditor list**: party, salesman, gaadi/slip, fuel udhaar, cash diya — aur **party-wise jod**.
 - ✅ Report duty ki tarikh se banti hai, aur saved snapshot se (baad ke rate badlav se nahi badalti).
 - ✅ Pump ka naam/pata secrets mein `PUMP_NAME`, `PUMP_ADDRESS`.
 
