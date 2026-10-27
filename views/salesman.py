@@ -4,7 +4,7 @@ import streamlit as st
 from core import auth, theme
 from core.calc import ZERO, D, q2
 from core.ui import flash, fuel, lt, num, rs, run, status_label
-from repo import credit, duties, rates, sales, settlements
+from repo import credit, duties, rates, sales, settlements, testing
 
 CR_KEY = "_credit_lines"     # list of line ids for the credit-sale form
 
@@ -53,10 +53,17 @@ def duty_page():
         nid = a["nozzle_id"]
         rate = rates.rate_for(n.get("fuel_type"), duty.get("date"))
         e = by_nozzle.get(nid)
-        sub = f"{fuel(n.get('fuel_type'))} · {rs(rate) + '/L' if rate else 'rate not set'} · opening {lt(a.get('opening_reading'))}"
+        tested = testing.liters_for_assignment(a["id"])
+        opening = q2(a.get("opening_reading"))
+        sub = f"{fuel(n.get('fuel_type'))} · {rs(rate) + '/L' if rate else 'rate not set'} · opening {lt(opening)}"
+        if tested > 0:
+            sub += f" · 🧪 testing {lt(tested)} → meter {lt(q2(opening + tested))}"
         with st.container(border=True):
             theme.nozzle_head(n.get("nozzle_name") or f"Nozzle {nid}", sub,
                               theme.chip("🔒 Entered", "ok") if e else theme.chip("Pending", "warn"))
+            if tested > 0:
+                st.caption(f"🧪 Testing {lt(tested)} done on this nozzle — it is NOT your sale. "
+                           "It will be subtracted from the meter at closing.")
             if e:
                 theme.big(rs(e.get("amount")), f"{lt(e.get('liters'))} × {rs(e.get('rate'))}")
                 can_change = editable and (e.get("status") or "pending") == "pending"
