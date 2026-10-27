@@ -5,8 +5,8 @@ import pandas as pd
 import streamlit as st
 
 from core import auth
-from core.db import FUEL_TYPES, ROLE_LABELS, ROLES, today_ist
-from core.ui import flash, fuel, lt, num, rs, run
+from core.db import FUEL_TYPES, ROLE_LABELS, ROLES, AppError, today_ist
+from core.ui import correction_box, flash, fuel, lt, num, rs, run
 from repo import nozzles, rates, tanks, users
 
 
@@ -42,6 +42,8 @@ def users_page():
     uid = st.selectbox("User", list(by_id), format_func=lambda i: f"{by_id[i]['name']} — {ROLE_LABELS.get(by_id[i]['role'])}")
     u = by_id[uid]
     with st.form(f"edit_{uid}"):
+        new_name = st.text_input("Full name", value=u.get("name") or "")
+        new_phone = st.text_input("Mobile", value=u.get("phone") or "")
         role = st.selectbox("Role", ROLES, index=ROLES.index(u["role"]) if u["role"] in ROLES else 0,
                             format_func=ROLE_LABELS.get)
         active = st.checkbox("Active", value=bool(u.get("is_active")))
@@ -49,7 +51,10 @@ def users_page():
         save = st.form_submit_button("Save")
     if save:
         def _save():
-            users.update_user(uid, me["id"], role=role, is_active=active)
+            if not new_name.strip():
+                raise AppError("Please enter the name.")
+            users.update_user(uid, me["id"], role=role, is_active=active,
+                              name=new_name.strip(), phone=new_phone.strip())
             if pw:
                 users.reset_password(uid, pw, me["id"])
         run(_save, success="Changes saved.")
@@ -89,6 +94,13 @@ def nozzles_page():
             run(nozzles.set_active, nid, False, me["id"], success="Nozzle deactivated.")
     elif c1.button("✅ Activate", use_container_width=True):
         run(nozzles.set_active, nid, True, me["id"], success="Nozzle activated.")
+
+    with st.expander("✏️ Rename nozzle"):
+        with st.form(f"ren_{nid}"):
+            new_n = st.text_input("New name", value=n["nozzle_name"])
+            ok = st.form_submit_button("Save name")
+        if ok:
+            run(nozzles.rename, nid, new_n, me["id"], success="Nozzle renamed.")
 
     with st.expander("🔧 Correct meter reading (repair / reset)"):
         st.caption("Use only after a meter repair or reset. Not allowed while the nozzle is on a shift. "
@@ -131,6 +143,16 @@ def rates_page():
         st.dataframe(pd.DataFrame([{"Effective from": h["effective_from"], "Fuel": fuel(h["fuel_type"]),
                                     "Rate": rs(h["price_per_liter"])} for h in hist]),
                      hide_index=True, use_container_width=True)
+        future = [h for h in hist if str(h["effective_from"]) > today]
+        if future:
+            with st.expander("🗑 Delete a future rate"):
+                st.caption("Only rates that start after today can be deleted. "
+                           "To fix today's or a past rate, enter the correct rate again.")
+                fid = st.selectbox("Rate", [h["id"] for h in future], key="del_rate",
+                                   format_func=lambda i: next(f"{fuel(h['fuel_type'])} · {rs(h['price_per_liter'])} "
+                                                              f"from {h['effective_from']}" for h in future if h["id"] == i))
+                if st.button("Delete rate", key="del_rate_btn"):
+                    run(rates.delete_future_rate, fid, me["id"], success="Future rate deleted.")
 
 
 # ------------------------------------------------------------------ Tanks
@@ -158,6 +180,17 @@ def tanks_page():
             run(tanks.create, ft, name, cap, opening, me["id"], success="Tank created.")
 
     if data:
+        with st.expander("✏️ Edit tank name / capacity"):
+            act = [t for t in data if t.get("is_active")]
+            ft_e = st.selectbox("Tank", [t["fuel_type"] for t in act], key="edit_tank",
+                                format_func=lambda f: next(f"{t.get('tank_name')} ({fuel(f)})" for t in act if t["fuel_type"] == f))
+            t_e = next(t for t in act if t["fuel_type"] == ft_e)
+            with st.form(f"edit_tank_{ft_e}"):
+                nm = st.text_input("Name", value=t_e.get("tank_name") or "")
+                cap = num("Capacity (L)", f"edit_cap_{ft_e}", value=float(t_e.get("capacity_liters") or 0))
+                ok = st.form_submit_button("Save")
+            if ok:
+                run(tanks.update, ft_e, nm, cap, me["id"], success="Tank updated.")
         with st.expander("🔧 Correct stock"):
             st.caption("Only for correcting mistakes. For daily dip readings use the Stock page. Every change is logged.")
             with st.form("fix_stock"):
@@ -194,6 +227,8 @@ def settings_page():
             if st.form_submit_button("Add"):
                 run(accounts.add_oil_company, n, me["id"], success="Oil company added.")
 
+    _edit_accounts(me)
+
     st.subheader("Opening balances (one-time setup)")
     st.caption("Balances at the time you start using the software. Each account can be set only once. "
                "Nozzle readings → Nozzles, tank stock → Tanks, party balances → below.")
@@ -217,6 +252,16 @@ def settings_page():
     if ok:
         ref = ref_b if acc == "bank" else ref_o if acc == "oil" else None
         run(money.set_opening, acc, ref, amt, d.isoformat(), me["id"], success="Opening balance saved.")
+    done = money.reversed_groups()
+    openings = [t for t in money.txns(kind="opening") if t.get("reverses_group") is None
+                and (t.get("group_id") or t["id"]) not in done]
+    banks_all, oils_all = accounts.name_maps()
+    correction_box("rev_open", openings, lambda t: (
+        f"{money.ACCOUNT_LABELS[t['account']]}"
+        + (f" · {banks_all.get(t['bank_account_id'])}" if t.get("bank_account_id") else "")
+        + (f" · {oils_all.get(t['oil_company_id'])}" if t.get("oil_company_id") else "")
+        + f" · {rs(t['amount'])} · {t['date']}"), money.reverse, me["id"],
+        title="↩️ Wrong opening balance? Reverse it", success="Opening balance reversed. You can now enter it again.")
 
     parties = credit_repo.list_parties()
     if parties:
@@ -227,6 +272,29 @@ def settings_page():
             ok = st.form_submit_button("Save")
         if ok:
             run(credit_repo.set_opening, pid, amt, today_ist(), me["id"], success="Party opening balance saved.")
+
+
+def _edit_accounts(me):
+    from repo import accounts
+    items = [("bank_accounts", b) for b in accounts.banks(False)] + [("oil_companies", o) for o in accounts.oil_companies(False)]
+    if not items:
+        return
+    with st.expander("✏️ Rename / deactivate a bank account or oil company"):
+        keys = list(range(len(items)))
+        k = st.selectbox("Select", keys, key="acc_edit", format_func=lambda i: (
+            ("🏦 " if items[i][0] == "bank_accounts" else "🛢️ ") + items[i][1]["name"]
+            + ("" if items[i][1]["is_active"] else " (inactive)")))
+        table, row = items[k]
+        with st.form(f"acc_ren_{table}_{row['id']}"):
+            nm = st.text_input("Name", value=row["name"])
+            ok = st.form_submit_button("Save name")
+        if ok:
+            run(accounts.rename, table, row["id"], nm, me["id"], success="Name updated.")
+        if row["is_active"]:
+            if st.button("⛔ Deactivate", key=f"acc_off_{table}_{row['id']}"):
+                run(accounts.set_active, table, row["id"], False, me["id"], success="Deactivated. Old entries are kept.")
+        elif st.button("✅ Activate", key=f"acc_on_{table}_{row['id']}"):
+            run(accounts.set_active, table, row["id"], True, me["id"], success="Activated.")
 
 
 # ------------------------------------------------------------------ System

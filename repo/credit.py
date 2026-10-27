@@ -110,3 +110,15 @@ def statement(party_id, from_date, to_date):
     data = rows(db().table("credit_transactions").select("*").eq("party_id", party_id)
                 .eq("status", "approved").lte("date", to_date).order("date").order("id").execute())
     return party_statement(data, from_date)
+
+
+def _rpc(name, params):
+    try:
+        return getattr(db().rpc(name, params).execute(), "data", None)
+    except Exception as exc:
+        raise AppError(getattr(exc, "message", None) or str(exc))
+
+
+def reverse_payment(txn_id, by):
+    _rpc("reverse_party_payment_v2", {"p_txn_id": txn_id, "p_by": by})
+    audit("party_payment_reversed", by, {"txn": txn_id})

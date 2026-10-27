@@ -47,3 +47,16 @@ def name_maps():
 
 def get_bank(bank_id):
     return one(db().table("bank_accounts").select("*").eq("id", bank_id).limit(1).execute())
+
+
+def rename(table, row_id, name, by):
+    if table not in ("bank_accounts", "oil_companies"):
+        raise AppError("Invalid table.")
+    name = (name or "").strip()
+    if not name:
+        raise AppError("Please enter a name.")
+    if any(r["id"] != row_id and r["name"].lower() == name.lower()
+           for r in rows(db().table(table).select("id, name").execute())):
+        raise AppError("This name already exists.")
+    db().table(table).update({"name": name}).eq("id", row_id).execute()
+    audit(f"{table}_renamed", by, {"id": row_id, "name": name})

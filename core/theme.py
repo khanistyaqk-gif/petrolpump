@@ -154,4 +154,4 @@ def big(value: str, caption: str = ""):
 
 
 STATUS_TONE = {"pending": "warn", "hold": "warn", "reopened": "bad", "approved": "ok", "rejected": "bad",
-               "cancelled": ""}
+               "cancelled": "", "reversed": "bad", "deleted": "bad"}

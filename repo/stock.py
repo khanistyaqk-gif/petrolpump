@@ -125,3 +125,13 @@ def last_purchase_rates(as_of=None):
                   .lte("date", as_of or today_ist()).order("date").order("id").execute()):
         out[r["fuel_type"]] = (D(r["amount"]) / D(r["liters"]))
     return out
+
+
+def reverse_inward(inward_id, by):
+    _rpc("reverse_inward_v2", {"p_id": inward_id, "p_by": by})
+    audit("inward_reversed", by, {"id": inward_id})
+
+
+def reverse_dip(dip_id, by):
+    _rpc("reverse_dip_v2", {"p_id": dip_id, "p_by": by})
+    audit("dip_reversed", by, {"id": dip_id})

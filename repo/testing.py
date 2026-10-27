@@ -63,3 +63,11 @@ def liters_for_assignment(assignment_id):
 def list_for_date(on_date):
     return rows(db().table("daily_testing").select("*, nozzles:nozzle_id(nozzle_name)")
                 .eq("date", on_date).order("created_at", desc=True).execute())
+
+
+def delete(testing_id, by):
+    try:
+        db().rpc("delete_testing_v2", {"p_id": testing_id, "p_by": by}).execute()
+    except Exception as exc:
+        raise AppError(getattr(exc, "message", None) or str(exc))
+    audit("testing_deleted", by, {"id": testing_id})

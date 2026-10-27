@@ -6,7 +6,7 @@ import streamlit as st
 
 from core import auth
 from core.db import today_ist
-from core.ui import flash, fuel, lt, num, rs, run, status_label
+from core.ui import correction_box, flash, fuel, lt, num, rs, run, status_label
 from repo import accounts, stock, tanks
 
 MGR = ("owner", "manager")
@@ -52,6 +52,13 @@ def page():
                                         "Invoice amount": rs(r["amount"]), "Company": oil_name.get(r["oil_company_id"]),
                                         "Invoice no.": r.get("invoice_no") or ""} for r in hist]),
                          hide_index=True, use_container_width=True)
+            if me["role"] == "owner":
+                correction_box("rev_in", hist, lambda r: (
+                    f"{r['date']} · {fuel(r['fuel_type'])} · {lt(r['liters'])} · {rs(r['amount'])} · "
+                    f"invoice {r.get('invoice_no') or '-'}"), stock.reverse_inward, me["id"],
+                    title="↩️ Reverse a wrong fuel purchase",
+                    note="Litres are taken out of the tank and the oil company payable is reduced, with today's date. "
+                         "Then enter the purchase again correctly.", success="Fuel purchase reversed.")
 
     with tabs[1]:
         st.caption("Actual stock measured by dip. On approval, the variance (actual − book) is adjusted in the tank.")
@@ -67,6 +74,12 @@ def page():
         _approval_list("stock_dips", stock.dips("pending"), me, lambda r: (
             f"{r['date']} · {fuel(r['fuel_type'])} · actual {lt(r['physical_liters'])} · book {lt(r['book_liters'])} · "
             f"variance {lt(r['variance'])}"), stock.approve_dip)
+        if me["role"] == "owner":
+            correction_box("rev_dip", stock.dips("approved", 30), lambda r: (
+                f"{r['date']} · {fuel(r['fuel_type'])} · actual {lt(r['physical_liters'])} · "
+                f"variance {lt(r['variance'])}"), stock.reverse_dip, me["id"],
+                title="↩️ Reverse a wrong dip entry",
+                note="The variance adjustment is undone in the tank with today's date.", success="Dip entry reversed.")
 
     with tabs[2]:
         c1, c2, c3 = st.columns(3)

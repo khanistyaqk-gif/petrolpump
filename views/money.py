@@ -6,7 +6,7 @@ import streamlit as st
 
 from core import auth
 from core.db import today_ist
-from core.ui import flash, num, rs, run
+from core.ui import correction_box, flash, num, rs, run
 from repo import accounts, money
 
 MGR = ("owner", "manager")
@@ -96,6 +96,7 @@ def page():
         acc = st.selectbox("Account", ["all"] + money.ACCOUNTS,
                            format_func=lambda a: "All accounts" if a == "all" else money.ACCOUNT_LABELS[a])
         data = money.txns(f, t, None if acc == "all" else acc)
+        done = money.reversed_groups()
         banks_all, oils_all = accounts.name_maps()
         if data:
             st.dataframe(pd.DataFrame([{
@@ -107,6 +108,23 @@ def page():
                 "In (+)": rs(x["amount"]) if float(x["amount"]) > 0 else "",
                 "Out (−)": rs(-float(x["amount"])) if float(x["amount"]) < 0 else "",
                 "Reference": x.get("ref_id") or "", "Remarks": x.get("note") or "",
+                "Status": "↩️ Reversed" if (x.get("group_id") or x["id"]) in done
+                          else "↩️ Reversal" if x.get("reverses_group") else "",
             } for x in data]), hide_index=True, use_container_width=True)
+            if me["role"] == "owner":
+                seen, can = set(), []
+                for x in data:
+                    g = x.get("group_id") or x["id"]
+                    if (x["kind"] in money.REVERSIBLE and x["kind"] != "opening" and not x.get("reverses_group")
+                            and g not in done and g not in seen):
+                        seen.add(g)
+                        can.append(x)
+                correction_box("rev_money", can, lambda x: (
+                    f"#{x.get('group_id') or x['id']} · {x['date']} · {money.KIND_LABELS.get(x['kind'])} · "
+                    f"{rs(abs(float(x['amount'])))} · {x.get('ref_id') or ''}"), money.reverse, me["id"],
+                    title="↩️ Reverse a wrong transfer",
+                    note="Both sides of the transfer are reversed with today's date. Opening balances are "
+                         "reversed in Owner > Settings; party payments in Credit Parties; purchases in Stock; "
+                         "expenses in Expenses.", success="Transfer reversed.")
         else:
             st.info("No transactions in this period.")

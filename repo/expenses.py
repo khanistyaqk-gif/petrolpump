@@ -47,3 +47,15 @@ def reject(expense_id, by):
     if not rows(res):
         raise AppError("This expense is not pending.")
     audit("expense_rejected", by, {"id": expense_id})
+
+
+def _rpc(name, params):
+    try:
+        return getattr(db().rpc(name, params).execute(), "data", None)
+    except Exception as exc:
+        raise AppError(getattr(exc, "message", None) or str(exc))
+
+
+def reverse(expense_id, by):
+    _rpc("reverse_expense_v2", {"p_id": expense_id, "p_by": by})
+    audit("expense_reversed", by, {"id": expense_id})

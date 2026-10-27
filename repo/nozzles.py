@@ -56,3 +56,14 @@ def correct_reading(nozzle_id, new_reading, reason, by):
     db().table("nozzles").update({"current_reading": to_json(new_reading)}).eq("id", nozzle_id).execute()
     audit("nozzle_reading_corrected", by, {"nozzle": nozzle_id, "old": (old or {}).get("current_reading"),
                                            "new": str(q2(new_reading)), "reason": reason})
+
+
+def rename(nozzle_id, name, by):
+    name = (name or "").strip()
+    if not name:
+        raise AppError("Please enter the nozzle name.")
+    if any(n["id"] != nozzle_id and n["nozzle_name"].strip().lower() == name.lower() for n in list_nozzles()):
+        raise AppError("A nozzle with this name already exists.")
+    old = get(nozzle_id)
+    db().table("nozzles").update({"nozzle_name": name}).eq("id", nozzle_id).execute()
+    audit("nozzle_renamed", by, {"nozzle": nozzle_id, "old": (old or {}).get("nozzle_name"), "new": name})

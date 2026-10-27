@@ -65,8 +65,24 @@ def num(label, key, value=0.0, step=0.01, min_value=0.0, help=None):
 STATUS_LABELS = {
     "pending": "🟡 Pending approval", "hold": "⏸️ On hold", "reopened": "🔄 Returned to salesman",
     "approved": "✅ Approved", "rejected": "❌ Rejected",
+    "reversed": "↩️ Reversed", "deleted": "🗑 Deleted", "cancelled": "✖ Cancelled",
 }
 
 
 def status_label(status) -> str:
     return STATUS_LABELS.get(status or "pending", str(status))
+
+
+def correction_box(key, items, describe, action, me_id, *, title="↩️ Reverse an entry", button="Reverse",
+                   note="A reverse entry is posted with today's date. The original entry stays in the records.",
+                   success="Entry reversed."):
+    """Owner tool: pick one entry, tick confirm, press button. items = list of dicts with 'id'."""
+    if not items:
+        return
+    with st.expander(title):
+        st.caption(note)
+        by_id = {i["id"]: i for i in items}
+        sel = st.selectbox("Entry", list(by_id), format_func=lambda i: describe(by_id[i]), key=f"{key}_sel")
+        sure = st.checkbox("I have checked — this entry was a mistake", key=f"{key}_ok")
+        if st.button(button, key=f"{key}_btn", disabled=not sure, type="primary"):
+            run(action, sel, me_id, success=success)

@@ -7,7 +7,7 @@ import streamlit as st
 from core import auth, theme
 from core.calc import ZERO, D, is_matched, q2, short_excess_label
 from core.db import FUEL_TYPES, today_ist
-from core.ui import flash, fuel, lt, num, rs, run, status_label
+from core.ui import correction_box, flash, fuel, lt, num, rs, run, status_label
 from repo import accounts, credit, duties, expenses, money, rates, sales, settlements, stock, tanks, testing, users
 
 MGR = ("owner", "manager")
@@ -144,7 +144,15 @@ def testing_page():
             "Nozzle": (r.get("nozzles") or {}).get("nozzle_name"), "Litres": lt(r.get("testing_liters")),
             "Meter": f"{q2(r.get('reading_before'))} → {q2(r.get('reading_after'))}",
             "Linked to shift": "Yes" if r.get("assignment_id") else "—", "Remarks": r.get("remark") or "",
+            "Status": "✅" if r.get("status") == "approved" else status_label(r.get("status")),
         } for r in rows_]), hide_index=True, use_container_width=True)
+        live = [r for r in rows_ if r.get("status") == "approved"]
+        correction_box("del_test", live, lambda r: (
+            f"{(r.get('nozzles') or {}).get('nozzle_name')} · {lt(r.get('testing_liters'))} · "
+            f"meter {q2(r.get('reading_before'))} → {q2(r.get('reading_after'))}"), testing.delete, me["id"],
+            title="🗑 Remove a wrong testing entry", button="Remove testing",
+            note="The meter goes back to the reading before testing. Allowed only if the meter has not "
+                 "moved since (no closing, no later testing).", success="Testing removed. Meter reading restored.")
 
 
 # ------------------------------------------------------------------ Settlement
@@ -262,6 +270,9 @@ def settlement_page():
                                          f"({'within ±₹2 — can be approved' if ok else 'more than ±₹2'})")
     if s.get("status") == "approved":
         st.success("This settlement has been approved.")
+        st.caption("🔒 An approved settlement is locked: sales, stock, cash and party balances are already posted. "
+                   "If something is wrong, correct it with a separate entry (party payment, money transfer, "
+                   "stock correction) — this keeps the books consistent.")
         return
 
     note = st.text_input("Note (for Hold / Return)", key=f"note_{s['id']}")
@@ -344,3 +355,10 @@ def credit_page():
                 "Status": status_label(r.get("status")), "Remarks": r.get("note") or "",
             } for r in led]), hide_index=True, use_container_width=True)
             st.caption("The balance includes approved entries only.")
+            if me["role"] == "owner":
+                pays = [r for r in led if r.get("type") == "payment_received" and r.get("status") == "approved"]
+                correction_box(f"rev_pay_{pid}", pays, lambda r: (
+                    f"{r.get('date')} · {rs(r.get('amount'))} · {(r.get('payment_mode') or '').upper()} {r.get('reference_id') or ''}"),
+                    credit.reverse_payment, me["id"], title="↩️ Reverse a wrong payment",
+                    note="The amount is added back to the party balance and taken back out of cash / bank / "
+                         "Paytm / CCMS with today's date.", success="Payment reversed. Party balance restored.")

@@ -6,7 +6,7 @@ import streamlit as st
 
 from core import auth
 from core.db import today_ist
-from core.ui import flash, num, rs, run, status_label
+from core.ui import correction_box, flash, num, rs, run, status_label
 from repo import accounts, expenses
 
 MGR = ("owner", "manager")
@@ -51,3 +51,8 @@ def page():
             "Paid by": "Cash" if e["payment_mode"] == "cash" else bank_name.get(e.get("bank_account_id")),
             "Description": e.get("description") or "", "Status": status_label(e["status"]),
         } for e in recent]), hide_index=True, use_container_width=True)
+        if me["role"] == "owner":
+            correction_box("rev_exp", [e for e in recent if e["status"] == "approved"], lambda e: (
+                f"{e['date']} · {e['category']} · {rs(e['amount'])} · {e.get('description') or ''}"),
+                expenses.reverse, me["id"], title="↩️ Reverse an approved expense",
+                note="The amount is added back to cash / bank with today's date.", success="Expense reversed.")

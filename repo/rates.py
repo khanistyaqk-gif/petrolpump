@@ -59,3 +59,15 @@ def set_rate(fuel_type: str, price, effective_from: str, by: str):
     }, on_conflict="fuel_type,effective_from").execute()
     audit("rate_set", by, {"fuel_type": fuel_type, "date": effective_from, "price": str(price),
                             "old_price": (old or {}).get("price_per_liter")})
+
+
+def delete_future_rate(rate_id, by):
+    """Only a rate that starts in the future can be deleted (no sale can have used it)."""
+    from core.db import today_ist
+    r = one(db().table("fuel_rates").select("*").eq("id", rate_id).limit(1).execute())
+    if not r:
+        raise AppError("Rate not found.")
+    if str(r["effective_from"]) <= today_ist():
+        raise AppError("Only a future rate can be deleted. For today or past dates, enter a new rate instead.")
+    db().table("fuel_rates").delete().eq("id", rate_id).execute()
+    audit("rate_deleted", by, {"fuel_type": r["fuel_type"], "date": r["effective_from"], "price": r["price_per_liter"]})

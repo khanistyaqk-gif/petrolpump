@@ -17,8 +17,10 @@ KIND_LABELS = {
 }
 
 
-def txns(from_date=None, to_date=None, account=None):
+def txns(from_date=None, to_date=None, account=None, kind=None):
     q = db().table("money_txns").select("*")
+    if kind:
+        q = q.eq("kind", kind)
     if from_date:
         q = q.gte("date", from_date)
     if to_date:
@@ -100,8 +102,10 @@ def set_opening(account, ref_id, amount, on_date, by):
         raise AppError("Opening balance for Cash / Paytm / CCMS cannot be negative.")
     if account in ("bank", "oil") and not ref_id:
         raise AppError("Please select the bank account / oil company.")
-    existing = [t for t in txns(account=account) if t["kind"] == "opening" and _key(t) == _key(
-        {"account": account, "bank_account_id": ref_id, "oil_company_id": ref_id})]
+    done = reversed_groups()
+    existing = [t for t in txns(account=account, kind="opening") if t.get("reverses_group") is None and _key(t) == _key(
+        {"account": account, "bank_account_id": ref_id, "oil_company_id": ref_id})
+        and (t.get("group_id") or t["id"]) not in done]
     if existing:
         raise AppError("Opening balance for this account has already been entered.")
     db().table("money_txns").insert({
@@ -111,3 +115,27 @@ def set_opening(account, ref_id, amount, on_date, by):
         "amount": to_json(amount), "kind": "opening", "note": "Opening balance", "created_by": by,
     }).execute()
     audit("money_opening", by, {"account": account, "ref": ref_id, "amount": str(amount)})
+
+
+def _rpc(name, params):
+    try:
+        return getattr(db().rpc(name, params).execute(), "data", None)
+    except Exception as exc:
+        raise AppError(getattr(exc, "message", None) or str(exc))
+
+
+REVERSIBLE = ("cash_deposit", "paytm_settlement", "ccms_adjust", "oil_payment", "opening")
+
+
+def reversed_groups() -> set:
+    """Groups that have been reversed (and the reversal groups themselves)."""
+    out = set()
+    for t in rows(db().table("money_txns").select("group_id, reverses_group").not_.is_("reverses_group", "null").execute()):
+        out.add(t["reverses_group"])
+        out.add(t["group_id"])
+    return out
+
+
+def reverse(txn_id, by):
+    _rpc("reverse_money_v2", {"p_id": txn_id, "p_by": by})
+    audit("money_reversed", by, {"txn": txn_id})

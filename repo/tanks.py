@@ -63,3 +63,16 @@ def correct_stock(fuel_type, new_stock, reason, by):
     adjust(fuel_type, delta, "correction", "stock_tanks", str(tank["id"]), reason, by)
     audit("tank_stock_corrected", by, {"fuel_type": fuel_type, "old": tank.get("current_stock"),
                                        "new": str(q2(new_stock)), "reason": reason})
+
+
+def update(fuel_type, name, capacity, by):
+    tank = get_by_fuel(fuel_type)
+    if not tank:
+        raise AppError("Tank not found.")
+    if D(capacity) <= 0:
+        raise AppError("Please enter the tank capacity.")
+    if D(capacity) < D(tank.get("current_stock")):
+        raise AppError(f"Capacity cannot be less than the current stock ({q2(tank.get('current_stock'))} L).")
+    data = {"tank_name": (name or "").strip() or tank.get("tank_name"), "capacity_liters": to_json(capacity)}
+    db().table("stock_tanks").update(data).eq("id", tank["id"]).execute()
+    audit("tank_updated", by, {"fuel_type": fuel_type, **data})

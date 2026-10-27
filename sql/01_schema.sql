@@ -531,7 +531,7 @@ create or replace function public.money_transfer_v2(
     p_ref text, p_note text, p_by uuid
 ) returns void
 language plpgsql security definer set search_path = public as $$
-declare v_bal numeric; v_from_amt numeric; v_to_amt numeric;
+declare v_bal numeric; v_from_amt numeric; v_to_amt numeric; v_gid bigint;
 begin
     if p_amount is null or p_amount <= 0 then raise exception 'Amount must be greater than 0'; end if;
     -- cash / paytm / ccms minus mein nahi ja sakte (bank OD/CC ja sakta hai)
@@ -547,10 +547,198 @@ begin
     v_to_amt := case when p_to = 'oil' then -round(p_amount, 2) else round(p_amount, 2) end;
 
     insert into money_txns (date, account, bank_account_id, oil_company_id, amount, kind, ref_id, note, created_by)
-    values (p_date, p_from, case when p_from = 'bank' then p_from_bank end, null, v_from_amt, p_kind, p_ref, p_note, p_by);
-    insert into money_txns (date, account, bank_account_id, oil_company_id, amount, kind, ref_id, note, created_by)
+    values (p_date, p_from, case when p_from = 'bank' then p_from_bank end, null, v_from_amt, p_kind, p_ref, p_note, p_by)
+    returning id into v_gid;
+    update money_txns set group_id = v_gid where id = v_gid;
+    insert into money_txns (date, account, bank_account_id, oil_company_id, amount, kind, ref_id, note, created_by, group_id)
     values (p_date, p_to, case when p_to = 'bank' then p_to_bank end,
-            case when p_to = 'oil' then p_oil_company end, v_to_amt, p_kind, p_ref, p_note, p_by);
+            case when p_to = 'oil' then p_oil_company end, v_to_amt, p_kind, p_ref, p_note, p_by, v_gid);
+end $$;
+
+
+-- =====================================================================
+-- Corrections: Reverse (ulti entry). Kuch delete nahi hota; purani entry "reversed" dikhti hai.
+-- =====================================================================
+alter table public.money_txns add column if not exists group_id bigint;
+alter table public.money_txns add column if not exists reverses_group bigint;
+create index if not exists idx_money_reverses on public.money_txns (reverses_group);
+-- purani transfer entries ko jodi (pair) mein baandho
+update public.money_txns m set group_id = g.gid
+  from (select id, min(id) over (partition by kind, date, created_at, created_by) as gid
+          from public.money_txns where kind in ('cash_deposit','paytm_settlement','ccms_adjust','oil_payment')) g
+ where m.id = g.id and m.group_id is null;
+update public.money_txns set group_id = id where group_id is null and kind = 'opening';
+
+do $$
+declare t text;
+begin
+    foreach t in array array['fuel_inward', 'stock_dips', 'expenses'] loop
+        execute format('alter table public.%I drop constraint if exists %I', t, t || '_status_check');
+        execute format('alter table public.%I add constraint %I check (status in (''pending'',''approved'',''rejected'',''reversed''))',
+                       t, t || '_status_check');
+    end loop;
+    alter table public.credit_transactions drop constraint if exists credit_transactions_status_check;
+    alter table public.credit_transactions add constraint credit_transactions_status_check
+        check (status in ('pending','hold','reopened','approved','rejected','reversed'));
+    alter table public.daily_testing drop constraint if exists daily_testing_status_check;
+    alter table public.daily_testing add constraint daily_testing_status_check
+        check (status in ('approved','rejected','deleted'));
+end $$;
+alter table public.fuel_inward add column if not exists reversed_by uuid;
+alter table public.fuel_inward add column if not exists reversed_at timestamptz;
+alter table public.stock_dips  add column if not exists reversed_by uuid;
+alter table public.stock_dips  add column if not exists reversed_at timestamptz;
+alter table public.expenses    add column if not exists reversed_by uuid;
+alter table public.expenses    add column if not exists reversed_at timestamptz;
+alter table public.credit_transactions add column if not exists reversed_by uuid;
+alter table public.credit_transactions add column if not exists reversed_at timestamptz;
+
+-- cash / paytm / ccms minus na ho
+create or replace function public._check_not_negative_v2(p_account text) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_bal numeric;
+begin
+    if p_account in ('cash','paytm','ccms') then
+        select coalesce(sum(amount), 0) into v_bal from money_txns where account = p_account;
+        if v_bal < 0 then
+            raise exception 'Cannot reverse: % balance would become negative (Rs %)', p_account, v_bal;
+        end if;
+    end if;
+end $$;
+
+-- money_txns ke ek group ki ulti entry (sirf diye gaye kinds)
+create or replace function public._reverse_money_rows_v2(p_rows bigint[], p_note text, p_by uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r record; v_gid bigint; v_src bigint; v_acc text; v_new bigint;
+begin
+    perform pg_advisory_xact_lock(hashtext('money_cash'));
+    perform pg_advisory_xact_lock(hashtext('money_paytm'));
+    perform pg_advisory_xact_lock(hashtext('money_ccms'));
+    select min(coalesce(group_id, id)) into v_src from money_txns where id = any(p_rows);
+    if exists (select 1 from money_txns where reverses_group = v_src) then
+        raise exception 'This entry has already been reversed';
+    end if;
+    for r in select * from money_txns where id = any(p_rows) order by id loop
+        insert into money_txns (date, account, bank_account_id, oil_company_id, amount, kind, ref_table, ref_id,
+                                note, created_by, group_id, reverses_group)
+        values ((now() at time zone 'Asia/Kolkata')::date, r.account, r.bank_account_id, r.oil_company_id, -r.amount, r.kind, r.ref_table, r.ref_id,
+                p_note, p_by, v_gid, v_src)
+        returning id into v_new;
+        if v_gid is null then
+            v_gid := v_new;
+            update money_txns set group_id = v_gid where id = v_gid;
+        end if;
+    end loop;
+    for v_acc in select distinct account from money_txns where id = any(p_rows) loop
+        perform _check_not_negative_v2(v_acc);
+    end loop;
+end $$;
+
+-- Cash deposit / Paytm settlement / CCMS adjust / Oil payment / Opening balance
+create or replace function public.reverse_money_v2(p_id bigint, p_by uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_g bigint; v_kind text; v_rows bigint[];
+begin
+    select coalesce(group_id, id), kind into v_g, v_kind from money_txns where id = p_id;
+    if not found then raise exception 'Transaction not found'; end if;
+    if v_kind not in ('cash_deposit','paytm_settlement','ccms_adjust','oil_payment','opening') then
+        raise exception 'This transaction cannot be reversed here (reverse it from its own page)';
+    end if;
+    if exists (select 1 from money_txns where coalesce(group_id, id) = v_g and reverses_group is not null) then
+        raise exception 'A reversal entry cannot be reversed';
+    end if;
+    select array_agg(id) into v_rows from money_txns where coalesce(group_id, id) = v_g;
+    perform _reverse_money_rows_v2(v_rows, 'Reversal of #' || v_g, p_by);
+end $$;
+
+-- Party se mila payment
+create or replace function public.reverse_party_payment_v2(p_txn_id bigint, p_by uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare t record; v_rows bigint[];
+begin
+    select * into t from credit_transactions where id = p_txn_id for update;
+    if not found then raise exception 'Payment not found'; end if;
+    if t.type <> 'payment_received' or t.status <> 'approved' then
+        raise exception 'Only an approved payment can be reversed';
+    end if;
+    update credit_parties set current_balance = current_balance + t.amount where id = t.party_id;
+    update credit_transactions set status = 'reversed', reversed_by = p_by, reversed_at = now() where id = t.id;
+    select array_agg(id) into v_rows from money_txns
+     where ref_table = 'credit_transactions' and ref_id = t.id::text and reverses_group is null;
+    if v_rows is not null then
+        perform _reverse_money_rows_v2(v_rows, 'Reversal of party payment #' || t.id, p_by);
+    end if;
+end $$;
+
+-- Approved fuel purchase
+create or replace function public.reverse_inward_v2(p_id bigint, p_by uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r record; v_rows bigint[];
+begin
+    select * into r from fuel_inward where id = p_id for update;
+    if not found then raise exception 'Fuel purchase entry not found'; end if;
+    if r.status <> 'approved' then raise exception 'Only an approved entry can be reversed'; end if;
+    perform adjust_tank_v2(r.fuel_type, -r.liters, 'inward', (now() at time zone 'Asia/Kolkata')::date, 'fuel_inward', r.id::text,
+                           'Reversal of invoice ' || coalesce(r.invoice_no, '-'), p_by);
+    select array_agg(id) into v_rows from money_txns
+     where ref_table = 'fuel_inward' and ref_id = r.id::text and reverses_group is null;
+    if v_rows is not null then
+        perform _reverse_money_rows_v2(v_rows, 'Reversal of fuel purchase #' || r.id, p_by);
+    end if;
+    update fuel_inward set status = 'reversed', reversed_by = p_by, reversed_at = now() where id = r.id;
+end $$;
+
+-- Approved dip
+create or replace function public.reverse_dip_v2(p_id bigint, p_by uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r record;
+begin
+    select * into r from stock_dips where id = p_id for update;
+    if not found then raise exception 'Dip entry not found'; end if;
+    if r.status <> 'approved' then raise exception 'Only an approved entry can be reversed'; end if;
+    if r.variance <> 0 then
+        perform adjust_tank_v2(r.fuel_type, -r.variance, 'dip_adjust', (now() at time zone 'Asia/Kolkata')::date, 'stock_dips', r.id::text,
+                               'Reversal of dip #' || r.id, p_by);
+    end if;
+    update stock_dips set status = 'reversed', reversed_by = p_by, reversed_at = now() where id = r.id;
+end $$;
+
+-- Approved expense
+create or replace function public.reverse_expense_v2(p_id bigint, p_by uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r record; v_rows bigint[];
+begin
+    select * into r from expenses where id = p_id for update;
+    if not found then raise exception 'Expense not found'; end if;
+    if r.status <> 'approved' then raise exception 'Only an approved expense can be reversed'; end if;
+    select array_agg(id) into v_rows from money_txns
+     where ref_table = 'expenses' and ref_id = r.id::text and reverses_group is null;
+    if v_rows is not null then
+        perform _reverse_money_rows_v2(v_rows, 'Reversal of expense #' || r.id, p_by);
+    end if;
+    update expenses set status = 'reversed', reversed_by = p_by, reversed_at = now() where id = r.id;
+end $$;
+
+-- Galat testing hatao: meter wapas, sirf tab jab uske baad meter na badla ho aur closing na hui ho
+create or replace function public.delete_testing_v2(p_id bigint, p_by uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r record; n record; a record;
+begin
+    select * into r from daily_testing where id = p_id for update;
+    if not found then raise exception 'Testing entry not found'; end if;
+    if r.status <> 'approved' then raise exception 'This testing entry has already been removed'; end if;
+    select * into n from nozzles where id = r.nozzle_id for update;
+    if n.current_reading <> r.reading_after then
+        raise exception 'The meter has changed after this testing (closing or another testing). It cannot be removed now.';
+    end if;
+    if r.assignment_id is not null then
+        select * into a from shift_assignments where id = r.assignment_id;
+        if a.closing_reading is not null then
+            raise exception 'Closing has already been recorded for this shift. It cannot be removed now.';
+        end if;
+    end if;
+    update nozzles set current_reading = r.reading_before where id = r.nozzle_id;
+    update daily_testing set status = 'deleted' where id = r.id;
 end $$;
 
 -- ---------- Sirf server (service_role) chala sake ----------
@@ -565,7 +753,10 @@ begin
         'approve_inward_v2(bigint,uuid)',
         'approve_dip_v2(bigint,uuid)',
         'approve_expense_v2(bigint,uuid)',
-        'money_transfer_v2(text,date,numeric,text,bigint,text,bigint,bigint,text,text,uuid)'
+        'money_transfer_v2(text,date,numeric,text,bigint,text,bigint,bigint,text,text,uuid)',
+        '_check_not_negative_v2(text)', '_reverse_money_rows_v2(bigint[],text,uuid)',
+        'reverse_money_v2(bigint,uuid)', 'reverse_party_payment_v2(bigint,uuid)', 'reverse_inward_v2(bigint,uuid)',
+        'reverse_dip_v2(bigint,uuid)', 'reverse_expense_v2(bigint,uuid)', 'delete_testing_v2(bigint,uuid)'
     ] loop
         execute format('revoke all on function public.%s from public, anon, authenticated', f);
         execute format('grant execute on function public.%s to service_role', f);

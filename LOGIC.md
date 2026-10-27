@@ -211,6 +211,33 @@ Status:
   jisme seedha litre daalo; entry ke baad bada amount + Edit / Cancel; credit sale "➕ Add" / "🗑 Remove";
   "Check & submit" box hara (Matched) ya laal (Short/Excess) dikhata hai; "My Entries" tarikh-wise cards.
 
+## 13d. Galti sudhaar — Edit / Reverse (kahan kya button)
+**Usool:** paise ya stock wali entry kabhi delete nahi hoti. Galti ho to **Reverse** — aaj ki tareekh (IST) par ulti entry,
+original record mein rehti hai (status "Reversed"). Sab ek hi database function (transaction) mein — aadha kaam kabhi nahi.
+
+| Kahan | Kya | Kaun |
+|---|---|---|
+| Salesman sale entry | Edit / Cancel (settlement submit se pehle) | Salesman |
+| Testing | 🗑 Remove — meter wapas pehle wali reading par. Sirf tab jab uske baad meter na badla ho (na closing, na doosri testing) | Manager, Owner |
+| Party payment | ↩️ Reverse — party balance wapas badhega, cash/bank/Paytm/CCMS se nikal jayega | Owner |
+| Cash deposit / Paytm settlement / CCMS adjust / Oil payment | ↩️ Reverse — dono taraf ulti (group_id se joda) | Owner |
+| Opening balance (money) | ↩️ Reverse, phir sahi opening dobara | Owner |
+| Fuel purchase (approved) | ↩️ Reverse — tank se litre kam, oil company payable kam. Wahi invoice no. dobara daal sakte | Owner |
+| Dip (approved) | ↩️ Reverse — variance ulta | Owner |
+| Expense (approved) | ↩️ Reverse — paisa cash/bank mein wapas | Owner |
+| User | Naam, mobile, role, active, password | Owner |
+| Nozzle | Naam badlo (duplicate nahi), meter correction (duty par nahi) | Owner |
+| Tank | Naam, capacity (capacity < current stock nahi) | Owner |
+| Bank / Oil company | Naam badlo (duplicate nahi), active/inactive | Owner |
+| Fuel rate | Sirf **future** rate delete. Aaj/purana galat ho to naya rate daalo | Owner |
+| Approved settlement | 🔒 Locked. Galti alag entry se sudharo (party payment, transfer, stock correction) | — |
+
+Rok-tok:
+- Ek entry do baar reverse nahi. Reversal entry ka reversal nahi.
+- Reverse se Cash / Paytm / CCMS minus nahi ho sakta (pehle doosri entry theek karo).
+- Sale (settlement) wali money rows Money page se reverse nahi hoti.
+- Reverse ke baad consistency check (System page) saaf rehna chahiye: register = tank, party = ledger.
+
 ## 14. Code ki sakhti (v2 mein hamesha)
 
 - ✅ Login ki chaabi (token) URL mein nahi rehti — screenshot / link share karne se login bahar nahi jata.
