@@ -178,4 +178,26 @@ def day_summary_data(on_date):
         for ft, v in liters.items():
             total["liters"][ft] = q2(total["liters"].get(ft, ZERO) + v)
     fuels = [f for f in FUEL_TYPES if f in used_fuels]
-    return {"date": on_date, "rows": out, "total": total, "pending": pending, "fuels": fuels}
+
+    # Creditor list: sirf approved duty ki approved credit entries
+    approved = {str(s["id"]): names.get(s["salesman_id"], "—") for s in all_s if s.get("status") == "approved"}
+    credit_lines = {}
+    if approved:
+        tx = rows(db().table("credit_transactions").select("*, credit_parties:party_id(name)")
+                  .in_("reference_id", list(approved)).in_("type", ["sale", "cash_given"])
+                  .eq("status", "approved").order("id").execute())
+        for t in tx:
+            party = (t.get("credit_parties") or {}).get("name") or "—"
+            key = (t["reference_id"], t["party_id"], t.get("note") or "")
+            line = credit_lines.setdefault(key, {"party": party, "salesman": approved.get(t["reference_id"], "—"),
+                                                 "note": t.get("note") or "", "fuel": ZERO, "cash": ZERO})
+            line["fuel" if t["type"] == "sale" else "cash"] = q2(line["fuel" if t["type"] == "sale" else "cash"]
+                                                                 + D(t["amount"]))
+    credit_list = sorted(credit_lines.values(), key=lambda x: (x["party"], x["salesman"]))
+    by_party = {}
+    for c in credit_list:
+        p = by_party.setdefault(c["party"], {"party": c["party"], "fuel": ZERO, "cash": ZERO})
+        p["fuel"] = q2(p["fuel"] + c["fuel"])
+        p["cash"] = q2(p["cash"] + c["cash"])
+    return {"date": on_date, "rows": out, "total": total, "pending": pending, "fuels": fuels,
+            "credit": credit_list, "credit_by_party": sorted(by_party.values(), key=lambda x: x["party"])}
